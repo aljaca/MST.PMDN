@@ -7,6 +7,7 @@ library(mclust)
 library(MASS)
 library(scales)
 source("../MST-PMDN.R")
+torch_set_num_threads(1)
 
 data <- read.csv("wave+surge_CCCRIS_181947.csv")
 data <- data[c(TRUE, rep(FALSE, 5)),] # 1-hr -> sub-samples

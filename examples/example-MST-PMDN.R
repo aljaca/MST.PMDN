@@ -2,6 +2,7 @@
 
 rm(list=ls())
 source("../MST-PMDN.R")
+torch_set_num_threads(1)
 
 sample_skew_mixture <- function(n = 1000, seed = NULL) {
   # Set seed for reproducibility if provided
