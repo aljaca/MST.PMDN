@@ -6,7 +6,7 @@ rm(list=ls())
 library(mclust)
 library(MASS)
 library(scales)
-source("MST-PMDN.R")
+source("../MST-PMDN.R")
 
 data <- read.csv("wave+surge_CCCRIS_181947.csv")
 data <- data[c(TRUE, rep(FALSE, 5)),] # 1-hr -> sub-samples
@@ -39,7 +39,7 @@ custom_split <- substr(date, 1, 4) <= 2015
 
 # volume (L)-shape (A)-orientation (D)
 modelName <- "VVV"
-skewtname <- "NN"
+skewtname <- "FN"
 constant_attr <- ""
 n_mixtures <- 4
 fixed_nu <-c(rep(50, n_mixtures-1), NA)
@@ -76,7 +76,7 @@ fit <- train_mst_pmdn(
   jitter = 1e-1,
   lr = 0.0001,
   epochs = 200,
-  batch_size = 32,
+  batch_size = 16,
   wd_hidden = 1e-3,
   checkpoint_interval = 10,
   checkpoint_path = "mdn_checkpoint.pt",

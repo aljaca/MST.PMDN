@@ -1,7 +1,7 @@
 ################################################################################
 
 rm(list=ls())
-source("MST-PMDN.R")
+source("../MST-PMDN.R")
 
 sample_skew_mixture <- function(n = 1000, seed = NULL) {
   # Set seed for reproducibility if provided
