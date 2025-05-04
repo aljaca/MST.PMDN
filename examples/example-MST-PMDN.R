@@ -198,7 +198,7 @@ str(predictions)
 # Sample from the Fitted Model
 # ------------------------------
 # Generate 5 new samples from the model’s predicted distribution.
-samples <- sample_mst_pmdn(predictions, num_samples = 5, device = "cpu")
+samples <- sample_mst_pmdn(predictions, num_samples = 5, device = "cpu")$samples
 
 # samples has shape: [num_samples, batch_size, output_dim]
 samples_shape <- samples$size()
