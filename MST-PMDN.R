@@ -760,13 +760,13 @@ loss_mst_pmdn <- function(output, target) {
   return(loss)
 }
 
-# -----------------------------------
-# Skew t-distribution random sampling
-# -----------------------------------
+# -----------------------------------------------
+# Skew t-distribution random sampling (on device)
+# *_df version converts to R data frame
+# -----------------------------------------------
 
 sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
-  
-  ## 1. gather parameters ---------------------------------------------
+  # gather parameters
   pi     <- mdn_output$pi          $to(device = device)
   mu     <- mdn_output$mu          $to(device = device)
   L_all  <- mdn_output$scale_chol  $to(device = device)
@@ -774,8 +774,8 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   alpha_all <- mdn_output$alpha    $to(device = device)
   
   B <- pi$size(1);  M <- pi$size(2);  d <- mu$size(3)
-  
-  ## 2. draw component indices ----------------------------------------
+
+  # component indices (1-based)
   idx      <- pi$multinomial(num_samples, replacement = TRUE)$add(1L)
   idx_d    <- idx$unsqueeze(-1)$expand(c(B, num_samples, d))
   idx_dd   <- idx$unsqueeze(-1)$unsqueeze(-1)$expand(c(B, num_samples, d, d))
@@ -785,27 +785,84 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   nu_s    <- nu_all   $gather(2, idx)
   alpha_s <- alpha_all$gather(2, idx_d)
   
-  ## 3. Gamma scaling --------------------------------------------------
+  # Gamma scaling for Student-t tails
   chi2 <- sample_gamma(nu_s / 2, scale = 2, device = device)
   W    <- torch_sqrt(nu_s / chi2$clamp(min = 1e-12))$unsqueeze(-1)
   
-  ## 4. skew direction δ  (Σ = I convention) ---------------------------
+  # skew direction (identity‑covariance, Sigma = I convention)
   alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
   delta         <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
   delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
   
-  ## 5. normals --------------------------------------------------------
+  # standard normals 
   z0 <- torch_randn(c(B, num_samples, 1), device = device)
   z1 <- torch_randn(c(B, num_samples, d), device = device)
   
-  ## 6. skew‑normal core ----------------------------------------------
+  # skew‑normal core
   X <- delta * torch_abs(z0) +
-    torch_sqrt((1 - delta_norm_sq)$clamp(min = 1e-12)) * z1     # [B,S,d]
+    torch_sqrt((1 - delta_norm_sq)$clamp(min = 1e-12)) * z1 
   
-  ## 7. map to Y -------------------------------------------------------
-  Y <- mu_s + W * (torch_matmul(L_s, X$unsqueeze(-1))$squeeze(-1)) # [B,S,d]
-  
-  Y$permute(c(2, 1, 3))                                            # [S,B,d]
+  # affine map to response space  Y
+  Y <- mu_s + W * (torch_matmul(L_s, X$unsqueeze(-1))$squeeze(-1))
+
+  # return both samples and component IDs
+  list(
+    samples    = Y$permute(c(2, 1, 3)),
+    components = idx$permute(c(2, 1))
+  )
+}
+
+sample_mst_pmdn_df <- function(mdn_output, num_samples = 1, device = "cpu") {
+  # gather parameters
+  pi         <- mdn_output$pi         $to(device = device)
+  mu         <- mdn_output$mu         $to(device = device)
+  L_all      <- mdn_output$scale_chol $to(device = device)
+  nu_all     <- mdn_output$nu         $to(device = device)
+  alpha_all  <- mdn_output$alpha      $to(device = device)
+
+  B <- pi$size(1)
+  M <- pi$size(2)
+  d <- mu$size(3)
+
+  # component indices (1‑based)
+  idx    <- pi$multinomial(num_samples, replacement = TRUE)$add(1L)
+  idx_d  <- idx$unsqueeze(-1)$expand(c(B, num_samples, d))
+  idx_dd <- idx$unsqueeze(-1)$unsqueeze(-1)$expand(c(B, num_samples, d, d))
+
+  mu_s     <- mu        $gather(2, idx_d)
+  L_s      <- L_all     $gather(2, idx_dd)
+  nu_s     <- nu_all    $gather(2, idx)
+  alpha_s  <- alpha_all $gather(2, idx_d)
+
+  # Gamma scaling for Student‑t tails
+  chi2 <- sample_gamma(nu_s / 2, scale = 2, device = device)
+  W    <- torch_sqrt(nu_s / chi2$clamp(min = 1e-12))$unsqueeze(-1)
+
+  # skew direction (identity‑covariance, Sigma = I convention)
+  alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
+  delta         <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
+  delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
+
+  # standard normals
+  z0 <- torch_randn(c(B, num_samples, 1), device = device)
+  z1 <- torch_randn(c(B, num_samples, d), device = device)
+
+  # skew‑normal core
+  X <- delta * torch_abs(z0) +
+       torch_sqrt((1 - delta_norm_sq)$clamp(min = 1e-12)) * z1
+
+  # affine map to response space  Y
+  Y <- mu_s + W * (torch_matmul(L_s, X$unsqueeze(-1))$squeeze(-1))
+
+  # reshape to long data‑frame
+  S   <- num_samples
+  mat  <- as.matrix(Y$reshape(c(B * S, d))$cpu())
+  comp <- as.integer(idx$reshape(c(B * S))$cpu())
+
+  data.frame(mat,
+             row  = rep(seq_len(B), each = S),
+             draw = rep(seq_len(S),  times = B),
+             comp = factor(comp))
 }
 
 # -------------------------------------------------
