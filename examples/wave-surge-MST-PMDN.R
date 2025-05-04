@@ -97,7 +97,7 @@ print(t2-t1)
 
 # Prediction using both structured and image inputs.
 pred <- predict_mst_pmdn(fit$model, x, device = "cpu")
-samples <- as.matrix(sample_mst_pmdn(pred, num_samples = 1)[1,,])
+samples <- as.matrix(sample_mst_pmdn(pred, num_samples = 1)$samples[1,,])
 samples[samples[,1] < min(y[,1]),1] <- min(y[,1])
 cat("mu:\n")
 print(pred$mu[1:2,,])
@@ -121,7 +121,7 @@ for(i in 2:nrow(x)){
   if(i%%1000==0) cat(i, "")
   x.i <- cbind(x[i,1:(ncol(x)-2),drop=FALSE],rsamples[i-1,,drop=FALSE])
   rsamples.i <- sample_mst_pmdn(predict_mst_pmdn(fit$model, x.i,
-                                  device = "cpu"), num_samples = 1)[1,,]
+                                device = "cpu"), num_samples = 1)$samples[1,,]
   rsamples[i,] <- as.matrix(rsamples.i)
 }
 rsamples[rsamples[,1] < min(y[,1]),1] <- min(y[,1])
