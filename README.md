@@ -105,14 +105,31 @@ The implementation consists of several key functions and modules:
 
 ### Function: `sample_mst_pmdn(mdn_output, num_samples, ...)`
 
-*   **Purpose:** Generates random samples from the predicted mixture distribution.
+*   **Purpose:** On-device generation of random samples from the predicted mixture distribution.
 *   **Method:**
     *   Samples component indices based on `pi`.
     *   Gathers parameters for the selected components.
     *   Generates t-distribution scaling factors `W` using `sample_gamma`.
     *   Generates a *standard* multivariate skew-normal sample `X` based on the component's `alpha` (via `delta`).
     *   Transforms the standard sample `X` to the output space: `Y = mu_s + W * (scale_chol_s @ X)`.
-*   **Output:** Tensor of samples of shape `[num_samples, batch_size, output_dim]`.
+*   **Output:** Returns a **list** with  
+    *  `samples` - a torch tensor of shape `[S, B, d]`, where `S` is `num_samples`, `B` is the batch size (rows of the predictor matrix), and `d` is the response dimension.  
+    *  `components` - a torch tensor of shape `[S, B]` giving the **1-based** component label (`1..G`) used for each draw.
+
+### Function: `sample_mst_pmdn_df(mdn_output, num_samples, ...)`
+
+*   **Purpose:** Generates random samples from the predicted mixture distribution and returns a formatted R data frame.
+*   **Method:**
+    *   Samples component indices based on `pi`.
+    *   Gathers parameters for the selected components.
+    *   Generates t-distribution scaling factors `W` using `sample_gamma`.
+    *   Generates a *standard* multivariate skew-normal sample `X` based on the component's `alpha` (via `delta`).
+    *   Transforms the standard sample `X` to the output space: `Y = mu_s + W * (scale_chol_s @ X)`.
+*   **Output:** A data frame with `num_samples * batch_size` rows containing  
+    *  simulated response variables in columns `V1 ... Vd`;  
+    *  `row` - the index (`1..B`) of the predictor row that generated the draw;  
+    *  `draw` - the draw number (`1..num_samples`) for that predictor row;  
+    *  `comp` - a factor giving the 1-based component label (`1..G`).  
 
 ### Function: `train_mst_pmdn(...)`
 
