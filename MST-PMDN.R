@@ -136,6 +136,7 @@ define_mst_pmdn <- function(
   range_nu = c(3., 50.),    # clamp nu range
   max_alpha = 5.,           # alpha = [-max_alpha, max_alpha]
   min_vol_shape = 1e-2,     # clamps on L_val and A_diag
+  min_mix_weight = 1e-4,    # clamp on min component weight
   jitter = 1e-6             # diagonal ridge for chol
 ) {
   nn_module(
@@ -182,6 +183,7 @@ define_mst_pmdn <- function(
       self$max_nu          <- max(range_nu)
       self$max_alpha       <- max_alpha
       self$min_vol_shape   <- min_vol_shape
+      self$min_mix_weight  <- min_mix_weight
       self$jitter          <- jitter
       # Infer output dimensions from modules
       # Determine tabular features dimension
@@ -401,7 +403,10 @@ define_mst_pmdn <- function(
       } else {
         pi_logits <- self$fc_pi(h)                         # [B, M]
       }
-      pi <- nnf_softmax(pi_logits, dim = 2)                # [B, M]
+      pi_raw <- nnf_softmax(pi_logits, dim = 2)            # [B, M]
+      max_weight <- 1.0 - (self$n_mixtures - 1) * self$min_mix_weight
+      pi_clamped <- pi_raw$clamp(min = self$min_mix_weight, max = max_weight)
+      pi <- pi_clamped / pi_clamped$sum(dim = 2, keepdim = TRUE)
       # ----------
       # Means (mu)
       # ----------
@@ -786,6 +791,7 @@ train_mst_pmdn <- function(inputs,
                            range_nu = c(3., 50.),
                            max_alpha = 5.,
                            min_vol_shape = 1e-2,
+                           min_mix_weight = 1e-4,
                            jitter = 1e-6,
                            activation = nn_relu,
                            epochs = 500,
@@ -839,6 +845,7 @@ train_mst_pmdn <- function(inputs,
     range_nu = range_nu,
     max_alpha = max_alpha,
     min_vol_shape = min_vol_shape,
+    min_mix_weight = min_mix_weight,
     jitter = jitter
   )
   # Apply weight normalization initialization
