@@ -1,5 +1,5 @@
 ################################################################################
-# Multivariate skew t-Parsimonious Mixture Density Network (MST-PMDN)          #
+# Deep Multivariate skew t-Parsimonious Mixture Density Network (MST-PMDN)     #
 # Alex J. Cannon <alex.cannon@ec.gc.ca>                                        #
 ################################################################################
 
@@ -53,6 +53,7 @@ build_orthogonal_matrix <- function(params, dim) {
   X$index_put_(list(batch_indices, row_indices, col_indices), params)
   X <- X - X$transpose(2, 3)
   Q <- torch_matrix_exp(X)
+  Q <- nnf_normalize(Q, p = 2, dim = -1)
   Q
 }
 
@@ -134,8 +135,8 @@ define_mst_pmdn <- function(
   fixed_nu = NULL,
   range_nu = c(3., 50.),    # clamp nu range
   max_alpha = 5.,           # alpha = [-max_alpha, max_alpha]
-  min_vol_shape = 1e-3,     # clamps on L_val and A_diag
-  jitter = 1e-3             # diagonal ridge for chol
+  min_vol_shape = 1e-2,     # clamps on L_val and A_diag
+  jitter = 1e-6             # diagonal ridge for chol
 ) {
   nn_module(
     get_module_output_dim = function(module, fallback_input_dim = NULL,
@@ -414,9 +415,12 @@ define_mst_pmdn <- function(
       # Volume (L)
       # ----------
       if (grepl("L", self$constant_attr)) {
-        L_val <- torch_exp(self$L_param)$unsqueeze(1)$expand(c(B, -1))
+        raw_L <- torch_clamp(self$L_param, min = -20, max = 20)
+        L_val <- nnf_softplus(raw_L)$unsqueeze(1)$expand(c(B, -1)) + 1e-6
       } else {
-        L_val <- torch_exp(self$fc_L(h))
+        raw_L <- self$fc_L(h)
+        raw_L <- torch_clamp(raw_L, min = -20, max = 20)
+        L_val <- nnf_softplus(raw_L) + 1e-6
       }
       if (self$volume_shared) {
         L_val <- L_val$expand(c(-1, self$n_mixtures))  # [B, M]
@@ -428,18 +432,25 @@ define_mst_pmdn <- function(
       if (self$shape_identity) {
         A_diag <- torch_ones(c(B, self$n_mixtures, d), device = x$device)
       } else if (grepl("A", self$constant_attr)) {
+        # Clamp logits and use soft‑plus(+ε) to prevent under/overflow
+        rawA <- self$A_param
+        rawA <- torch_clamp(rawA, min = -20, max =  20)
+        rawA <- nnf_softplus(rawA) + 1e-6
         if (self$shape_shared) {
-          tmp <- torch_exp(self$A_param)$unsqueeze(1)$unsqueeze(1)
-          A_diag <- tmp$expand(c(B, self$n_mixtures, -1))  # [B, M, d]
+          tmp <- rawA$unsqueeze(1)$unsqueeze(1)                # [1,1,d]
+          A_diag <- tmp$expand(c(B, self$n_mixtures, -1))      # [B,M,d]
         } else {
-          tmp <- torch_exp(self$A_param)$unsqueeze(1)      # [1, M, d]
-          A_diag <- tmp$expand(c(B, -1, -1))               # [B, M, d]
+          tmp <- rawA$unsqueeze(1)                             # [1,M,d]
+          A_diag <- tmp$expand(c(B, -1, -1))                   # [B,M,d]
         }
         # Normalize product
         prodA <- torch_prod(A_diag, dim = -1, keepdim = TRUE)
         A_diag <- A_diag / (prodA^(1 / d))
       } else {
-        rawA <- torch_exp(self$fc_A(h))
+        # Learned shape: same clamp‑softplus safeguard
+        rawA <- self$fc_A(h)
+        rawA <- torch_clamp(rawA, min = -20, max =  20)
+        rawA <- nnf_softplus(rawA) + 1e-6
         if (self$shape_shared) {
           A_diag <- rawA$unsqueeze(2)$expand(c(-1, self$n_mixtures, -1))
         } else {
@@ -448,6 +459,8 @@ define_mst_pmdn <- function(
         prodA <- torch_prod(A_diag, dim = -1, keepdim = TRUE)
         A_diag <- A_diag / (prodA^(1 / d))
       }
+      # Final safety clamp keeps Σ well‑conditioned
+      A_diag <- torch_clamp(A_diag, min = 1e-3, max = 1e+3)
       # ---------------
       # Orientation (D)
       # ---------------
@@ -579,24 +592,15 @@ define_mst_pmdn <- function(
       # -----------------------------------------
       L_val   <- torch_clamp(L_val,   min = self$min_vol_shape, max = 1e2)
       A_diag  <- torch_clamp(A_diag,  min = self$min_vol_shape, max = 1e2)
-      A_mats <- torch_diag_embed(A_diag)         # [B, M, d, d]
-      # Compute scale matrices using vectorized operations
-      B_size <- D_tensor$size(1)
-      M_size <- D_tensor$size(2)
-      d_size <- D_tensor$size(3)
-      # Reshape tensors for batched operations
-      D_flat <- D_tensor$view(c(B_size * M_size, d_size, d_size))
-      A_flat <- A_mats$view(c(B_size * M_size, d_size, d_size))
-      # Compute batched matrix multiplications
-      tmp1 <- torch_bmm(D_flat, A_flat)
-      # Use transpose(2, 3) for R torch (1-based indexing)
-      tmp2 <- torch_bmm(tmp1, D_flat$transpose(2, 3))
-      # Reshape back to original dimensions
-      M_stack <- tmp2$view(c(B_size, M_size, d_size, d_size))
-      scale <- L_val * M_stack
+      # Build Cholesky factor directly
+      lambda_half <- torch_sqrt(L_val)
+      sqrtA_mats  <- torch_diag_embed(torch_sqrt(A_diag))
+      L_direct <- torch_matmul(D_tensor, sqrtA_mats)
+      L_direct <- lambda_half * L_direct
+      Sigma <- torch_matmul(L_direct, L_direct$transpose(-2, -1))
       eye_mat <- torch_eye(d, device = x$device)$unsqueeze(1)$unsqueeze(1
-        )$expand(c(B, self$n_mixtures, d, d))
-      scale_chol <- linalg_cholesky(scale + self$jitter * eye_mat)
+                           )$expand(c(B, self$n_mixtures, d, d))
+      scale_chol <- linalg_cholesky(Sigma + self$jitter * eye_mat)
       # --------------------
       # Return named outputs
       # --------------------
@@ -622,11 +626,11 @@ define_mst_pmdn <- function(
 loss_mst_pmdn <- function(output, target) {
   # Output must have: pi, mu, scale (Cholesky L), nu, alpha
   # target shape: [B, d]
-  pi         <- output$pi    # [B, M]
-  mu         <- output$mu    # [B, M, d]
+  pi         <- output$pi         # [B, M]
+  mu         <- output$mu         # [B, M, d]
   scale_chol <- output$scale_chol # [B, M, d, d]
-  nu         <- output$nu    # [B, M]
-  alpha      <- output$alpha # [B, M, d]
+  nu         <- output$nu         # [B, M]
+  alpha      <- output$alpha      # [B, M, d]
   # B <- target$size(1)
   # M <- pi$size(2)
   d <- target$size(2)
@@ -639,7 +643,7 @@ loss_mst_pmdn <- function(output, target) {
   v <- linalg_solve_triangular(scale_chol, diff_unsq,
                                upper = FALSE)$squeeze(-1) # [B, M, d]
   # Mahalanobis distance squared: maha = ||v||^2 = ||L^{-1}(y-mu)||^2
-  maha <- v$pow(2)$sum(dim = 3) # [B, M]
+  maha <- v$pow(2)$sum(dim = 3)$clamp(max = 1e6) # [B, M]
   # log|Sigma| = log|L L^T| = 2 * log|L| = 2 * sum(log(diag(L)))
   # Diagonals of Cholesky factor L (scale_chol)
   diag_L <- scale_chol$diagonal(dim1 = -2, dim2 = -1)
@@ -652,7 +656,7 @@ loss_mst_pmdn <- function(output, target) {
   lg_nuplusd_div2 <- torch_lgamma(half_nu_plus_d)
   logC_t <- lg_nuplusd_div2 - lg_nu_div2 - (d / 2) * torch_log(nu *
                 torch_tensor(3.141593, device = dev)) - 0.5 * log_det_Sigma
-  logTail <- -half_nu_plus_d * torch_log1p(maha / nu)
+  logTail <- -half_nu_plus_d * torch_log1p(torch_clamp(maha / nu, min = -1 + 1e-7, max = 1e7))
   log_pdf_t <- logC_t + logTail
   # Skewness factor calculation
   # Clamp large values, [B, M, 1]
@@ -707,7 +711,7 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   W    <- torch_sqrt(nu_s / chi2$clamp(min = 1e-12))$unsqueeze(-1)
   # skew direction (identity‑covariance, Sigma = I convention)
   alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
-  delta         <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
+  delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq + 1e-10)
   delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
   # standard normals
   z0 <- torch_randn(c(B, num_samples, 1), device = device)
@@ -781,12 +785,13 @@ train_mst_pmdn <- function(inputs,
                            fixed_nu = NULL,
                            range_nu = c(3., 50.),
                            max_alpha = 5.,
-                           min_vol_shape = 1e-3,
-                           jitter = 1e-3,
+                           min_vol_shape = 1e-2,
+                           jitter = 1e-6,
                            activation = nn_relu,
                            epochs = 500,
                            lr = 0.001,
                            batch_size = 16,
+                           max_norm = NULL,
                            wd_hidden = 0.,
                            wd_image = wd_hidden,
                            wd_tabular = wd_hidden,
@@ -1014,6 +1019,9 @@ train_mst_pmdn <- function(inputs,
       }
       loss <- loss_mst_pmdn(pred, outputs_batch)
       loss$backward()
+      if (!is.null(max_norm)) {
+        nn_utils_clip_grad_norm_(model$parameters, max_norm)
+      }
       optimizer$step()
       total_loss  <- total_loss + loss$item()
       batch_count <- batch_count + 1
