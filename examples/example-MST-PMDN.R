@@ -124,7 +124,7 @@ image_mod <- image_module()
 # ------------------------------
 
 # Hidden layers configuration for the main MLP (after concatenating features).
-hidden_dim <- c(7, 5)
+hidden_dim <- c(15, 10, 7, 5, 3)
 
 # Number of mixture components, LADns constraint, and stationary parameters
 n_mixtures <- 2
@@ -134,7 +134,8 @@ fixed_nu <- c(50, NA)
 
 # Training hyperparameters
 epochs <- 100           # For demonstration, use a small number of epochs.
-lr <- 0.01              # Learning rate
+lr <- 0.001             # Learning rate
+max_norm <- 1.0         # Gradient clipping
 batch_size <- 16        # Batch size
 wd_image <- 1e-6        # Image encoder weight decay
 wd_tabular <- 1e-6      # Tabular encoder weight decay
@@ -150,11 +151,12 @@ model_fit <- train_mst_pmdn(
   activation = nn_relu,
   range_nu = c(3., 50.),
   max_alpha = 5.,
-  min_vol_shape = 0.01,
-  jitter = 0.1,
+  min_vol_shape = 1e-2,
+  jitter = 1e-6,
   n_mixtures = n_mixtures,
   epochs = epochs,
   lr = lr,
+  max_norm = max_norm,
   batch_size = batch_size,
   wd_hidden = wd_hidden,
   wd_image = wd_image,

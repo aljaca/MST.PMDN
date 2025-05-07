@@ -9,7 +9,7 @@ library(scales)
 source("../MST-PMDN.R")
 torch_set_num_threads(1)
 
-data <- read.csv("wave+surge_CCCRIS_181947.csv")
+data <- read.csv("wave-surge_CCCRIS_181947.csv")
 data <- data[c(TRUE, rep(FALSE, 5)), ]
 
 y <- data[, c("Wave.m", "Surge.m")]
@@ -74,8 +74,9 @@ fit <- train_mst_pmdn(
   range_nu = c(3., 50.),
   max_alpha = 5.,
   min_vol_shape = 0.01,
-  jitter = 0.1,
+  jitter = 1e-4,
   lr = 0.0001,
+  max_norm = 1.0,
   epochs = 200,
   batch_size = 16,
   wd_hidden = 1e-3,
