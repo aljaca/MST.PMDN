@@ -53,7 +53,7 @@ build_orthogonal_matrix <- function(params, dim) {
   X$index_put_(list(batch_indices, row_indices, col_indices), params)
   X <- X - X$transpose(2, 3)
   Q <- torch_matrix_exp(X)
-  Q <- nnf_normalize(Q, p = 2, dim = -1)
+  Q <- linalg_qr(Q)[[1]]
   Q
 }
 
