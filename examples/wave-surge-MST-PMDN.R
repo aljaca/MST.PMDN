@@ -47,39 +47,70 @@ fixed_nu <- c(rep(50, n_mixtures - 1), NA)
 
 tabular_module <- nn_module(
   "TabularModule",
-  initialize = function(input_dim, hidden_dim, output_dim) {
-    self$fc1 <- nn_linear(input_dim, hidden_dim)
-    self$fc2 <- nn_linear(hidden_dim, output_dim)
+  initialize = function(input_dim, hidden_dims, output_dim) {
+    # hidden_dims is a vector/list of dimensions for each hidden layer
+    # Validate input
+    if (!is.vector(hidden_dims) && !is.list(hidden_dims)) {
+      hidden_dims <- c(hidden_dims)  # Convert single value to vector
+    }
+    self$n_hidden_layers <- length(hidden_dims)
+    self$hidden_dims <- hidden_dims
     self$output_dim <- output_dim
+    # Create the first layer from input to first hidden layer
+    self$layers <- nn_module_list()
+    if (self$n_hidden_layers > 0) {
+      # First layer: input_dim → hidden_dims[1]
+      self$layers$append(nn_linear(input_dim, hidden_dims[[1]]))
+      # Create remaining hidden layers
+      if (self$n_hidden_layers > 1) {
+        for (i in 2:self$n_hidden_layers) {
+          self$layers$append(nn_linear(hidden_dims[[i - 1]], hidden_dims[[i]]))
+        }
+      }
+      # Output layer: last_hidden_dim → output_dim
+      self$layers$append(nn_linear(hidden_dims[[self$n_hidden_layers]],
+                                   output_dim))
+    } else {
+      # No hidden layers, direct input → output
+      self$layers$append(nn_linear(input_dim, output_dim))
+    }
   },
   forward = function(x) {
-    x <- nnf_relu(self$fc1(x))
-    x <- self$fc2(x)
+    # Process through all layers except the last one with ReLU activation
+    for (i in 1:(length(self$layers) - 1)) {
+      x <- nnf_relu(self$layers[[i]](x))
+    }
+    # Last layer (output) without activation
+    x <- self$layers[[length(self$layers)]](x)
     x
   }
 )
-tabular_mod <- tabular_module(input_dim = ncol(x), hidden_dim = 5,
-                              output_dim = 5)
+
+tabular_mod <- tabular_module(
+  input_dim = ncol(x),
+  hidden_dims = c(5, 5),
+  output_dim = 5
+)
 
 t1 <- Sys.time()
 fit <- train_mst_pmdn(
   inputs = x,
   outputs = y,
-  hidden_dim = c(5, 3),
+  hidden_dim = 3,
   n_mixtures = n_mixtures,
   constraint = paste0(modelname, skewtname),
   constant_attr = constant_attr,
   fixed_nu = fixed_nu,
-  activation = nn_relu,
+  activation = nn_tanh,
   range_nu = c(3., 50.),
   max_alpha = 5.,
   min_vol_shape = 0.01,
   jitter = 1e-4,
   lr = 0.0001,
-  max_norm = 1.0,
-  epochs = 200,
+  max_norm = 0.1,
+  epochs = 500,
   batch_size = 16,
-  wd_hidden = 1e-3,
+  wd_hidden = 1e-5,
   checkpoint_interval = 10,
   checkpoint_path = "mdn_checkpoint.pt",
   resume_from_checkpoint = FALSE,
@@ -175,9 +206,11 @@ abline(v = 30)
 
 par(mfrow = c(1, 2))
 qqplot(y[, 1], rsamples[, 1], xlab = "y1", ylab = "rsamples1")
-abline(0, 1, col = "red", lty = 2, lwd = 2); grid()
+abline(0, 1, col = "red", lty = 2, lwd = 2)
+grid()
 qqplot(y[, 2], rsamples[, 2], xlab = "y2", ylab = "rsamples2")
-abline(0, 1, col = "red", lty = 2, lwd = 2); grid()
+abline(0, 1, col = "red", lty = 2, lwd = 2)
+grid()
 
 dev.off()
 

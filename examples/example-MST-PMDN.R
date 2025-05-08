@@ -124,7 +124,7 @@ image_mod <- image_module()
 # ------------------------------
 
 # Hidden layers configuration for the main MLP (after concatenating features).
-hidden_dim <- c(15, 10, 7, 5, 3)
+hidden_dim <- c(10, 5, 3)
 
 # Number of mixture components, LADns constraint, and stationary parameters
 n_mixtures <- 2
@@ -148,7 +148,7 @@ model_fit <- train_mst_pmdn(
   inputs = inputs,
   outputs = outputs,
   hidden_dim = hidden_dim,
-  activation = nn_relu,
+  activation = c(nn_relu, nn_relu, nn_tanh),
   range_nu = c(3., 50.),
   max_alpha = 5.,
   min_vol_shape = 1e-2,
@@ -161,7 +161,7 @@ model_fit <- train_mst_pmdn(
   wd_hidden = wd_hidden,
   wd_image = wd_image,
   wd_tabular = wd_tabular,
-  early_stopping_patience = 50,
+  early_stopping_patience = 20,
   validation_split = 0.2,
   image_inputs = image_inputs,
   image_module = image_mod,
