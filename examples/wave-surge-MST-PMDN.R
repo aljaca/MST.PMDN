@@ -58,16 +58,20 @@ tabular_module <- nn_module(
     self$output_dim <- output_dim
     # Create the first layer from input to first hidden layer
     self$layers <- nn_module_list()
+    self$bns <- nn_module_list()  # BatchNorm layers for hidden layers
     if (self$n_hidden_layers > 0) {
       # First layer: input_dim → hidden_dims[1]
       self$layers$append(nn_linear(input_dim, hidden_dims[[1]]))
+      self$bns$append(nn_batch_norm1d(hidden_dims[[1]]))
       # Create remaining hidden layers
       if (self$n_hidden_layers > 1) {
         for (i in 2:self$n_hidden_layers) {
+          # Hidden layer: hidden_dims[i-1] → hidden_dims[i]
           self$layers$append(nn_linear(hidden_dims[[i - 1]], hidden_dims[[i]]))
+          self$bns$append(nn_batch_norm1d(hidden_dims[[i]]))
         }
       }
-      # Output layer: last_hidden_dim → output_dim
+      # Output layer: last_hidden_dim → output_dim (no batch norm)
       self$layers$append(nn_linear(hidden_dims[[self$n_hidden_layers]],
                                    output_dim))
     } else {
@@ -76,11 +80,13 @@ tabular_module <- nn_module(
     }
   },
   forward = function(x) {
-    # Process through all layers except the last one with ReLU activation
-    for (i in 1:(length(self$layers) - 1)) {
-      x <- nnf_relu(self$layers[[i]](x))
+    # Process through all hidden layers with BatchNorm and ReLU activation
+    for (i in 1:self$n_hidden_layers) {
+      x <- self$layers[[i]](x)
+      x <- self$bns[[i]](x)
+      x <- nnf_relu(x)
     }
-    # Last layer (output) without activation
+    # Last layer (output) without activation or batch norm
     x <- self$layers[[length(self$layers)]](x)
     x
   }
@@ -88,7 +94,7 @@ tabular_module <- nn_module(
 
 tabular_mod <- tabular_module(
   input_dim = ncol(x),
-  hidden_dims = c(5, 5),
+  hidden_dims = c(10, 5, 5),
   output_dim = 5
 )
 
