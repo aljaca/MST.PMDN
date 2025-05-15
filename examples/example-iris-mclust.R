@@ -49,7 +49,6 @@ fit_pmdn <- function(x, model, G, N, epochs = 500) {
     range_nu         = c(3, 1e6),
     lr               = 1e-2,
     batch_size       = 10,
-    wd_hidden        = 0,
     validation_split = 0.
   )
   negloglik <- tail(fit$best_train_loss, 1) * N

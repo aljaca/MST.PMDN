@@ -24,7 +24,7 @@ sample_skew_mixture <- function(n = 1000, seed = NULL) {
   Omega2 <- matrix(c(1.2, 0.3, 0.3, 0.4), 2, 2)  # Different scale
   alpha2 <- c(3, -0.5)   # Shape parameters for rightward skew
   nu1 <- 30              # Degrees of freedom for tail1
-  nu2 <- 7               # Degrees of freedom for tail2
+  nu2 <- 10              # Degrees of freedom for tail2
   # Generate samples from each component
   samples1 <- sn::rmst(n1, xi = xi1, Omega = Omega1, alpha = alpha1, nu = nu1)
   samples2 <- sn::rmst(n2, xi = xi2, Omega = Omega2, alpha = alpha2, nu = nu2)
@@ -129,17 +129,17 @@ hidden_dim <- c(10, 5, 3)
 # Number of mixture components, LADns constraint, and stationary parameters
 n_mixtures <- 2
 constraint <- "VVVFV"
-constant_attr <- ""
-fixed_nu <- c(50, NA)
+constant_attr <- "ns"
+fixed_nu <- c(NA, NA)
 
 # Training hyperparameters
 epochs <- 100           # For demonstration, use a small number of epochs.
 lr <- 0.001             # Learning rate
 max_norm <- 1.0         # Gradient clipping
 batch_size <- 16        # Batch size
-wd_image <- 1e-6        # Image encoder weight decay
-wd_tabular <- 1e-6      # Tabular encoder weight decay
-wd_hidden <- 1e-6       # PMDN hidden layer weight decay
+drop_hidden <- 0.2      # Dropout in hidden layers of MLP
+wd_image <- 1e-3        # Image encoder weight decay
+wd_tabular <- 1e-3      # Tabular encoder weight decay
 
 # Train the model.
 # The train_mst_pmdn function handles data conversion, splitting,
@@ -158,7 +158,7 @@ model_fit <- train_mst_pmdn(
   lr = lr,
   max_norm = max_norm,
   batch_size = batch_size,
-  wd_hidden = wd_hidden,
+  drop_hidden = drop_hidden,
   wd_image = wd_image,
   wd_tabular = wd_tabular,
   early_stopping_patience = 20,
