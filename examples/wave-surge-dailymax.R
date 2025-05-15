@@ -37,13 +37,13 @@ for (i in 1:2) {
 x <- scale(cbind(doy_sc, y_lag1))
 
 ##
-# Image data (mean sea level pressure and sea level pressure gradient; 64 x 64)
+# Image data (mean sea level pressure and sea level pressure gradient; 32 x 32)
 
-nc <- nc_open("CCCRIS-181947_psl_ERA5.nc")
+nc <- nc_open("CCCRIS-181947_psl2_ERA5.nc")
 psl <- ncvar_get(nc, varid = "psl")
 nc_close(nc)
 
-nc <- nc_open("CCCRIS-181947_psl-grad_ERA5.nc")
+nc <- nc_open("CCCRIS-181947_psl-grad2_ERA5.nc")
 psl_grad <- ncvar_get(nc, varid = "psl_grad")
 nc_close(nc)
 
@@ -136,7 +136,7 @@ image_module <- nn_module(
                             kernel_size = 3, padding = 1)
     self$bn2 <- nn_batch_norm2d(num_features = 32)
     self$pool2 <- nn_max_pool2d(kernel_size = 2)
-    self$flatten_dim <- 32 * 16 * 16
+    self$flatten_dim <- 32 * 8 * 8
     self$fc <- nn_linear(self$flatten_dim, 32)
     self$bn_fc <- nn_batch_norm1d(num_features = 32)
     self$output_dim <- 32
