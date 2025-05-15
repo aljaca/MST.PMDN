@@ -130,6 +130,7 @@ define_mst_pmdn <- function(
   constraint = "VVVNN",
   constant_attr = "",
   activation = nn_relu,
+  drop_hidden = 0.,
   image_module = NULL,
   tabular_module = NULL,
   fixed_nu = NULL,
@@ -219,11 +220,17 @@ define_mst_pmdn <- function(
       }
       layers <- list()
       current_dim <- total_input_dim
-      for (i in seq_along(self$hidden_dims)) {
-        layers[[length(layers) + 1]] <- weight_norm_linear(current_dim,
-                                                           self$hidden_dims[i])
-        layers[[length(layers) + 1]] <- act_funcs[[i]]()
-        current_dim <- self$hidden_dims[i]
+      n_hidden_layers <- length(self$hidden_dims)
+      for (i in seq_len(n_hidden_layers)) {
+        next_dim <- self$hidden_dims[i]
+        layers[[length(layers) + 1]] <- nn_linear(current_dim, next_dim)
+        # Add batch norm and activation except on the final (output) layer
+        if (i < n_hidden_layers) {
+          layers[[length(layers) + 1]] <- nn_batch_norm1d(next_dim)
+          layers[[length(layers) + 1]] <- act_funcs[[i]]()
+          layers[[length(layers) + 1]] <- nn_dropout(p = drop_hidden)
+        }
+        current_dim <- next_dim
       }
       self$hidden <- nn_sequential(!!!layers)
       self$final_hidden_dim <- current_dim
@@ -798,9 +805,9 @@ train_mst_pmdn <- function(inputs,
                            lr = 0.001,
                            batch_size = 16,
                            max_norm = NULL,
-                           wd_hidden = 0.,
-                           wd_image = wd_hidden,
-                           wd_tabular = wd_hidden,
+                           drop_hidden = 0.,
+                           wd_image = 0.,
+                           wd_tabular = 0.,
                            checkpoint_interval = 10,
                            checkpoint_path = "checkpoint.pt",
                            resume_from_checkpoint = FALSE,
@@ -839,6 +846,7 @@ train_mst_pmdn <- function(inputs,
     input_dim, output_dim, hidden_dim, n_mixtures,
     constraint, constant_attr,
     activation = activation,
+    drop_hidden = drop_hidden,
     image_module = image_module,
     tabular_module = tabular_module,
     fixed_nu = fixed_nu,
@@ -929,8 +937,7 @@ train_mst_pmdn <- function(inputs,
       list(params       = tab_params,
            weight_decay = wd_tabular),
       # Hidden layers in MST-PMDN head
-      list(params       = hidden_params,
-           weight_decay = wd_hidden),
+      list(params       = hidden_params),
       # MST heads get no weight decay
       list(params       = head_params)
     ),
