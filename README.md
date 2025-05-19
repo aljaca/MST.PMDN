@@ -99,7 +99,7 @@ The implementation consists of several key functions and modules:
         *   Standardizes residuals: `v = scale_chol_k^{-1} * diff`.
         *   Calculates squared Mahalanobis distance: `maha = ||v||^2`.
         *   Calculates the log-PDF of the symmetric multivariate t-distribution part using `maha`, `log_det(Sigma_k)`, and `nu_k`.
-        *   Calculates the skewness adjustment term `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`, where `w` is proportional to `v`, using the `t_cdf_scaled_normal` approximation.
+        *   Calculates the skewness adjustment term `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`, where `w` is proportional to `v`, using `t_cdf`.
     *   Combines component log-densities using mixture weights `pi` via `logsumexp`.
     *   Returns the mean NLL over the batch.
 
