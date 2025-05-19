@@ -9,15 +9,8 @@ library(torch)
 # Utility functions
 # -----------------
 
-t_cdf_scaled_normal <- function(z, nu) {
-  # Scaled normal approximation to t CDF
-  # z: [B, M] tensor alpha^T w, nu
-  z2  <- z * torch_sqrt(nu / (nu + z$pow(2)))
-  # now a standard normal CDF via erf
-  0.5 * (1 + torch_erf(z2 / torch_sqrt(torch_tensor(2, device = z2$device))))
-}
-
 sample_gamma <- function(shape, scale = 1, device = "cpu") {
+  # Gamma scaling for Student-t tails
   if (!inherits(shape, "torch_tensor")) {
     shape <- torch_tensor(shape, device = device, dtype = torch_float())
   } else {
@@ -63,17 +56,134 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
   km    <- kmeans(as.matrix(outputs_train), centers = n_mixtures, nstart = 20)
   cent  <- torch_tensor(km$centers, dtype = torch_float(), device = device)
   if (grepl("m", constant_attr)) {
-    ## μ is a parameter
+    ## mu is a parameter
     with_no_grad({
       model$mu$copy_(cent)
     })
   } else {
-    ## μ comes from bias of fc_mu
+    ## mu comes from bias of fc_mu
     with_no_grad({
       model$fc_mu$bias$copy_(cent$reshape(c(-1)))
       model$fc_mu$g$zero_()
     })
   }
+}
+
+# -----------------
+# Student-t CDF
+# -----------------
+
+t_cdf_slow <- function(z, nu) {
+  # Slow Student-t CDF using R pt and finite difference for nu gradient
+  # Allows gradients to flow through computational graph
+  # Store original shape and device
+  z_shape <- z$size()
+  z_device <- z$device
+  # Handle batch dimensions properly
+  z_flat <- z$reshape(-1)
+  batch_size <- z_flat$size(1)
+  # Handle nu - it could be a scalar or tensor with same shape as z
+  # or broadcastable
+  if (inherits(nu, "torch_tensor")) {
+    if (nu$dim() == 0) {
+      # Scalar tensor - expand to match z
+      nu_flat <- nu$expand(batch_size)
+    } else {
+      # Already a tensor with dimensions - flatten
+      nu_flat <- nu$reshape(-1)
+      # If nu has a single element, broadcast it
+      if (nu_flat$size(1) == 1 && batch_size > 1) {
+        nu_flat <- nu_flat$expand(batch_size)
+      }
+    }
+    nu_device <- nu$device
+  } else {
+    # Convert scalar to tensor
+    nu_flat <- torch_tensor(rep(nu, batch_size), dtype = z$dtype,
+                            device = z_device)
+    nu_device <- z_device
+  }
+  # Move to CPU for R functions
+  if (as.character(z_device) == "cpu") {
+    z_cpu <- z_flat
+    nu_cpu <- nu_flat
+  } else {
+    z_cpu <- z_flat$to(device = "cpu")
+    nu_cpu <- nu_flat$to(device = "cpu")
+  }
+  # Calculate CDF values
+  z_vals <- as.numeric(z_cpu)
+  nu_vals <- as.numeric(nu_cpu)
+  cdf_vals <- pt(z_vals, df = nu_vals)
+  # Convert back to tensor on original device
+  cdf_flat <- torch_tensor(cdf_vals, dtype = z$dtype, device = z_device)
+  # Process gradients if needed
+  if (z$requires_grad || (inherits(nu, "torch_tensor") && nu$requires_grad)) {
+    # PDF values for z gradient
+    if (z$requires_grad) {
+      pdf_vals <- dt(z_vals, df = nu_vals)
+      pdf_flat <- torch_tensor(pdf_vals, dtype = z$dtype, device = z_device)
+    }
+    # Finite difference for nu gradient
+    if (inherits(nu, "torch_tensor") && nu$requires_grad) {
+      delta <- 0.01
+      # Vectorized version for efficiency
+      nu_plus_vals <- nu_vals + delta
+      nu_minus_vals <- pmax(nu_vals - delta, 0.01)
+      cdf_plus_vals <- pt(z_vals, df = nu_plus_vals)
+      cdf_minus_vals <- pt(z_vals, df = nu_minus_vals)
+      d_cdf_d_nu_vals <- (cdf_plus_vals - cdf_minus_vals) / (2 * delta)
+      d_cdf_d_nu_flat <- torch_tensor(d_cdf_d_nu_vals, dtype = nu$dtype,
+                                      device = nu_device)
+    }
+    # Reshape to original dimensions
+    cdf <- cdf_flat$reshape(z_shape)
+    # Add gradient paths
+    result <- cdf
+    if (z$requires_grad) {
+      pdf <- pdf_flat$reshape(z_shape)
+      result <- result + pdf * (z - z$detach())
+    }
+    if (inherits(nu, "torch_tensor") && nu$requires_grad) {
+      d_cdf_d_nu <- d_cdf_d_nu_flat$reshape(z_shape)
+      # Need to handle broadcasting if nu has different shape than z
+      if (nu$dim() == 0) {
+        # If nu is scalar, sum over all dimensions for gradient
+        result <- result + d_cdf_d_nu$sum() * (nu - nu$detach())
+      } else if (nu$dim() < z$dim()) {
+        # Handle case where nu has fewer dimensions (broadcasting occurred)
+        # This is a simplification - in practice you'd need more complex logic
+        # based on the actual broadcasting pattern
+        nu_shape <- nu$size()
+        nu_expanded <- nu$expand(z_shape)
+        result <- result + d_cdf_d_nu * (nu_expanded - nu_expanded$detach())
+      } else {
+        # Same shape case
+        result <- result + d_cdf_d_nu * (nu - nu$detach())
+      }
+    }
+    return(result)
+  }
+  # For non-gradient case, reshape and return
+  cdf_flat$reshape(z_shape)
+}
+
+t_cdf_fast <- function(z, nu) {
+  # Fast scaled normal approximation for large values of nu
+  nu_f <- nu$to(dtype = z$dtype)
+  s    <- torch_sqrt(nu_f / (nu_f - torch_tensor(2, dtype = z$dtype,
+                                                 device = z$device)))
+  distr_normal(0, 1)$cdf(s * z)
+}
+
+t_cdf <- function(z, nu, nu_switch = 20) {
+  # Switches between slow and fast Student-t CDF implementations when
+  # nu >= nu_switch
+  torch_where(nu >= nu_switch, t_cdf_fast(z, nu), t_cdf_slow(z, nu))
+}
+
+log_pt <- function(z, nu, nu_switch = 20) {
+  torch_log(torch_clamp(t_cdf(z, nu, nu_switch), min = 1e-12))
 }
 
 # ------------------------------
@@ -668,7 +778,8 @@ loss_mst_pmdn <- function(output, target) {
   lg_nuplusd_div2 <- torch_lgamma(half_nu_plus_d)
   logC_t <- lg_nuplusd_div2 - lg_nu_div2 - (d / 2) * torch_log(nu *
                 torch_tensor(3.141593, device = dev)) - 0.5 * log_det_Sigma
-  logTail <- -half_nu_plus_d * torch_log1p(torch_clamp(maha / nu, min = -1 + 1e-7, max = 1e7))
+  logTail <- -half_nu_plus_d * torch_log1p(torch_clamp(maha / nu,
+                                           min = -1 + 1e-7, max = 1e7))
   log_pdf_t <- logC_t + logTail
   # Skewness factor calculation
   # Clamp large values, [B, M, 1]
@@ -676,13 +787,8 @@ loss_mst_pmdn <- function(output, target) {
   w <- cterm * v # [B, M, d]
   # alpha^T w
   alpha_dot_w <- (alpha * w)$sum(dim = 3) # [B, M]
-  # Univariate standard t-CDF with df = nu + d; scaled normal approximation
-  # to let gradient information be calculated. Requires missing
-  # torch_special_stdtr or torch_igamma to calculate properly
-  vdf       <- nu + d          # degrees of freedom for the skew term
-  t_cdf_val <- t_cdf_scaled_normal(alpha_dot_w, vdf)$clamp(min = 1e-12)
-  # Log of skewness adjustment: log(2 * CDF(alpha^T w))
-  log_skew_factor <- (2 * t_cdf_val)$log()
+  # Univariate standard t-CDF with df = nu + d
+  log_skew_factor <- torch_log(2.0) + log_pt(alpha_dot_w, nu + d)
   # Final log-density of skew-t component
   log_skewt <- log_pdf_t + log_skew_factor # [B, M]
   # Mixture weighting and log-sum-exp for total log-likelihood
