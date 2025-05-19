@@ -157,7 +157,7 @@ The core components – model definition (`define_mst_pmdn`), loss calculation (
     *   Correctly calculates Mahalanobis distance (`maha`) using the standardized variable `v`.
     *   Calculates the symmetric t-distribution PDF using `maha`.
     *   **Key Point:** The skewness term `alpha_k^T w` implies that the learned `alpha` parameter operates on the *standardized* vector `w` (related to `v`). This means `alpha` defines skewness *after* the transformation by `scale_chol_k^{-1}`.
-    *   Uses `t_cdf`` for the CDF calculation required by the skewness term.
+    *   Uses `t_cdf` for the CDF calculation required by the skewness term.
 
 *   **Sampling Function:**
     *   Generates a *standard* skew-normal variable `X` (mean 0, identity scale) based on the learned `alpha`.
