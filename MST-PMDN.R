@@ -157,31 +157,26 @@ t_cdf_slow <- function(z, nu) {
   # Store original shape and device
   z_shape <- z$size()
   z_device <- z$device
-  # Handle batch dimensions properly
+  # Flatten z for vectorized processing
   z_flat <- z$reshape(-1)
   batch_size <- z_flat$size(1)
-  # Handle nu - it could be a scalar or tensor with same shape as z
-  # or broadcastable
+  # Flatten or expand nu for broadcasting
   if (inherits(nu, "torch_tensor")) {
     if (nu$dim() == 0) {
-      # Scalar tensor - expand to match z
       nu_flat <- nu$expand(batch_size)
     } else {
-      # Already a tensor with dimensions - flatten
       nu_flat <- nu$reshape(-1)
-      # If nu has a single element, broadcast it
       if (nu_flat$size(1) == 1 && batch_size > 1) {
         nu_flat <- nu_flat$expand(batch_size)
       }
     }
     nu_device <- nu$device
   } else {
-    # Convert scalar to tensor
     nu_flat <- torch_tensor(rep(nu, batch_size), dtype = z$dtype,
                             device = z_device)
     nu_device <- z_device
   }
-  # Move to CPU for R functions
+  # Move to CPU for R functions (pt/dt)
   if (as.character(z_device) == "cpu") {
     z_cpu <- z_flat
     nu_cpu <- nu_flat
@@ -189,13 +184,13 @@ t_cdf_slow <- function(z, nu) {
     z_cpu <- z_flat$to(device = "cpu")
     nu_cpu <- nu_flat$to(device = "cpu")
   }
-  # Calculate CDF values
+  # Calculate CDF values using R
   z_vals <- as.numeric(z_cpu)
   nu_vals <- as.numeric(nu_cpu)
   cdf_vals <- pt(z_vals, df = nu_vals)
   # Convert back to tensor on original device
   cdf_flat <- torch_tensor(cdf_vals, dtype = z$dtype, device = z_device)
-  # Process gradients if needed
+  # Gradient logic (surrogate gradients)
   if (z$requires_grad || (inherits(nu, "torch_tensor") && nu$requires_grad)) {
     # PDF values for z gradient
     if (z$requires_grad) {
@@ -205,7 +200,6 @@ t_cdf_slow <- function(z, nu) {
     # Finite difference for nu gradient
     if (inherits(nu, "torch_tensor") && nu$requires_grad) {
       delta <- 0.01
-      # Vectorized version for efficiency
       nu_plus_vals <- nu_vals + delta
       nu_minus_vals <- pmax(nu_vals - delta, 0.01)
       cdf_plus_vals <- pt(z_vals, df = nu_plus_vals)
@@ -216,7 +210,6 @@ t_cdf_slow <- function(z, nu) {
     }
     # Reshape to original dimensions
     cdf <- cdf_flat$reshape(z_shape)
-    # Add gradient paths
     result <- cdf
     if (z$requires_grad) {
       pdf <- pdf_flat$reshape(z_shape)
@@ -224,21 +217,8 @@ t_cdf_slow <- function(z, nu) {
     }
     if (inherits(nu, "torch_tensor") && nu$requires_grad) {
       d_cdf_d_nu <- d_cdf_d_nu_flat$reshape(z_shape)
-      # Need to handle broadcasting if nu has different shape than z
-      if (nu$dim() == 0) {
-        # If nu is scalar, sum over all dimensions for gradient
-        result <- result + d_cdf_d_nu$sum() * (nu - nu$detach())
-      } else if (nu$dim() < z$dim()) {
-        # Handle case where nu has fewer dimensions (broadcasting occurred)
-        # This is a simplification - in practice you'd need more complex logic
-        # based on the actual broadcasting pattern
-        nu_shape <- nu$size()
-        nu_expanded <- nu$expand(z_shape)
-        result <- result + d_cdf_d_nu * (nu_expanded - nu_expanded$detach())
-      } else {
-        # Same shape case
-        result <- result + d_cdf_d_nu * (nu - nu$detach())
-      }
+      nu_expanded <- nu$expand(z_shape)
+      result <- result + d_cdf_d_nu * (nu_expanded - nu_expanded$detach())
     }
     return(result)
   }
