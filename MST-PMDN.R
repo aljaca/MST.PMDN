@@ -74,6 +74,83 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
 # Student-t CDF
 # -----------------
 
+t_pdf_int <- function(x, nu, pi_const) {
+  # Student-t PDF for t_cdf_int
+  nu_for_calc <- nu
+  if (nu$dim() > 0) {
+    if (x$dim() > nu$dim() && (x$dim() == nu$dim() + 1)) {
+      nu_for_calc <- nu$unsqueeze(-1L)
+    }
+  }
+  # Log of Gamma functions
+  log_gamma_nu_plus_1_div_2 <- torch_lgamma((nu_for_calc + 1.0) / 2.0)
+  log_gamma_nu_div_2 <- torch_lgamma(nu_for_calc / 2.0)
+  # Coefficient part
+  coeff_num <- torch_exp(log_gamma_nu_plus_1_div_2)
+  coeff_den_sqrt_term <- torch_sqrt(nu_for_calc * pi_const)
+  coeff_den <- coeff_den_sqrt_term * torch_exp(log_gamma_nu_div_2)
+  coeff <- coeff_num / coeff_den
+  # Main term: (1 + x^2/nu)^(-(nu+1)/2)
+  # x_squared_div_nu term: x^2 / nu_for_calc
+  x_squared_div_nu <- torch_pow(x, 2L) / nu_for_calc
+  base <- 1.0 + x_squared_div_nu
+  # exponent term: -(nu_for_calc + 1.0) / 2.0
+  exponent <- -(nu_for_calc + 1.0) / 2.0
+  main_term <- torch_pow(base, exponent)
+  return(coeff * main_term)
+}
+
+t_cdf_int <- function(t_val, nu, num_integration_points = 1000L) {
+  # Student-t CDF (approximation via integration of PDF)
+  if (!inherits(t_val, "torch_tensor")) {
+    stop("t_val must be a torch_tensor.")
+  }
+  original_t_dtype <- t_val$dtype
+  if (!inherits(nu, "torch_tensor")) {
+    nu <- torch_scalar_tensor(nu, dtype = t_val$dtype, device = t_val$device)
+  }
+  original_nu_dtype <- nu$dtype
+  if ((nu <= 0)$any()$item()) {
+    stop("All elements of degrees of freedom 'nu' must be positive.")
+  }
+  if (!t_val$dtype$is_floating_point) {
+    t_val <- t_val$to(dtype = torch_float())
+  }
+  if (!nu$dtype$is_floating_point) {
+    nu <- nu$to(dtype = torch_float()) 
+  }
+  promoted_dtype <- torch_promote_types(t_val$dtype, nu$dtype)
+  if (!promoted_dtype$is_floating_point) { 
+      promoted_dtype <- torch_float()
+  }
+  if (t_val$dtype != promoted_dtype) {
+    t_val <- t_val$to(dtype = promoted_dtype)
+  }
+  if (nu$dtype != promoted_dtype) {
+    nu <- nu$to(dtype = promoted_dtype)
+  }
+  pi_const <- torch_scalar_tensor(3.14159265359, dtype = promoted_dtype,
+                                  device = t_val$device)
+  # Integral calculation
+  abs_t <- torch_abs(t_val)  
+  abs_t_unsqueezed <- abs_t$unsqueeze(-1L)
+  base_integration_domain <- torch_linspace(0, 1, num_integration_points, 
+                                            dtype = promoted_dtype,
+                                            device = t_val$device)
+  integration_x <- abs_t_unsqueezed * base_integration_domain
+  integration_y <- t_pdf_int(integration_x, nu, pi_const)
+  # Integrate using trapezoidal rule along the last dimension (the integration
+  # points dimension). Resulting shape will be *original_t_shape
+  integral_0_to_abs_t <- torch_trapz(integration_y, x = integration_x,
+                                     dim = -1L)
+  # CDF calculation
+  sign_t <- torch_sign(t_val)
+  half_const <- torch_scalar_tensor(0.5, dtype = promoted_dtype,
+                                    device = t_val$device)
+  cdf_val <- half_const + sign_t * integral_0_to_abs_t  
+  return(cdf_val)
+}
+
 t_cdf_slow <- function(z, nu) {
   # Slow Student-t CDF using R pt and finite difference for nu gradient
   # Allows gradients to flow through computational graph
@@ -778,7 +855,7 @@ loss_mst_pmdn <- function(output, target, nu_switch = 20) {
   lg_nu_div2 <- torch_lgamma(half_nu)
   lg_nuplusd_div2 <- torch_lgamma(half_nu_plus_d)
   logC_t <- lg_nuplusd_div2 - lg_nu_div2 - (d / 2) * torch_log(nu *
-                torch_tensor(3.141593, device = dev)) - 0.5 * log_det_Sigma
+                torch_tensor(3.14159265359, device = dev)) - 0.5 * log_det_Sigma
   logTail <- -half_nu_plus_d * torch_log1p(torch_clamp(maha / nu,
                                            min = -1 + 1e-7, max = 1e7))
   log_pdf_t <- logC_t + logTail
