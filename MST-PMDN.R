@@ -70,9 +70,10 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
   }
 }
 
-# -----------------
-# Student-t CDF
-# -----------------
+# ------------------------------------------------
+# Student-t CDF functions (waiting for torch for R
+# implementation of torch.distributions.studentT)
+# ------------------------------------------------
 
 t_pdf_int <- function(x, nu, pi_const) {
   # Student-t PDF for t_cdf_int
@@ -101,7 +102,7 @@ t_pdf_int <- function(x, nu, pi_const) {
 }
 
 t_cdf_int <- function(t_val, nu, num_integration_points = 1000L) {
-  # Student-t CDF (approximation via integration of PDF)
+  # Student-t CDF (slow approximation via integration of PDF)
   if (!inherits(t_val, "torch_tensor")) {
     stop("t_val must be a torch_tensor.")
   }
@@ -152,15 +153,13 @@ t_cdf_int <- function(t_val, nu, num_integration_points = 1000L) {
 }
 
 t_cdf_slow <- function(z, nu) {
-  # Slow Student-t CDF using R pt and finite difference for nu gradient
+  # Student-t CDF (slow R pt and finite difference for nu gradient)
   # Allows gradients to flow through computational graph
   # Store original shape and device
   z_shape <- z$size()
   z_device <- z$device
-  # Flatten z for vectorized processing
   z_flat <- z$reshape(-1)
   batch_size <- z_flat$size(1)
-  # Flatten or expand nu for broadcasting
   if (inherits(nu, "torch_tensor")) {
     if (nu$dim() == 0) {
       nu_flat <- nu$expand(batch_size)
@@ -227,7 +226,7 @@ t_cdf_slow <- function(z, nu) {
 }
 
 t_cdf_fast <- function(z, nu) {
-  # Fast scaled normal approximation for large values of nu
+  # Student-t CDF (fast scaled normal approximation for large values of nu)
   nu_f <- nu$to(dtype = z$dtype)
   s    <- torch_sqrt(nu_f / (nu_f - torch_tensor(2, dtype = z$dtype,
                                                  device = z$device)))
@@ -236,7 +235,7 @@ t_cdf_fast <- function(z, nu) {
 
 t_cdf <- function(z, nu, nu_switch = 20) {
   # Switches between slow and fast Student-t CDF implementations when
-  # nu >= nu_switch
+  # nu >= nu_switch (swap t_cdf_slow for t_cdf_int if working on GPU)
   torch_where(nu >= nu_switch, t_cdf_fast(z, nu), t_cdf_slow(z, nu))
 }
 
@@ -987,7 +986,7 @@ train_mst_pmdn <- function(inputs,
                            tabular_module = NULL,
                            device = "cpu"
 ) {
-  # --- Data Preparation ---
+  # Data preparation
   if (!inherits(inputs, "torch_tensor"))
     inputs <- torch_tensor(inputs, device = device, dtype = torch_float())
   else
@@ -1002,7 +1001,7 @@ train_mst_pmdn <- function(inputs,
     else
       image_inputs <- image_inputs$to(device = device)
   }
-  # --- Data Split ---
+  # Data training/validation split
   n_total <- inputs$size(1)
   if (!is.null(custom_split)) {
     if (is.list(custom_split) && all(c("train", "validation") %in% names(custom_split))) {
@@ -1039,7 +1038,7 @@ train_mst_pmdn <- function(inputs,
     val_outputs <- NULL
     val_image_inputs <- NULL
   }
-  # --- Model Initialization Logic ---
+  # Model initialization logic
   checkpoint <- NULL
   if (!is.null(model)) {
     # Use provided model, reset all counters/optimizer
@@ -1113,7 +1112,7 @@ train_mst_pmdn <- function(inputs,
     best_train_loss   <- Inf
     best_train_epoch  <- NA
   }
-  # --- Optimizer ---
+  # Adam optimizer
   img_params    <- if (!is.null(model$image_module))   model$image_module$parameters   else list()
   tab_params    <- if (!is.null(model$tabular_module)) model$tabular_module$parameters else list()
   hidden_params <- model$hidden$parameters
@@ -1129,7 +1128,8 @@ train_mst_pmdn <- function(inputs,
     ),
     lr = lr
   )
-  # Restore optimizer state if resuming from checkpoint (but not for new phase/fine-tune)
+  # Restore optimizer state if resuming from checkpoint (but not for new
+  # phase/fine-tune)
   if (!is.null(checkpoint) && is.null(model)) {
     optimizer$load_state_dict(checkpoint$optimizer_state_dict)
   }
@@ -1137,7 +1137,7 @@ train_mst_pmdn <- function(inputs,
   best_train_checkpoint_path <- sub("\\.pt$", "_trainbest.pt", checkpoint_path)
   if (identical(best_train_checkpoint_path, checkpoint_path))
     best_train_checkpoint_path <- paste0(checkpoint_path, "_trainbest")
-  # --- Dataloaders ---
+  # Dataloaders
   dataset_fn <- function(inp, img_inp, outp) {
     if (is.null(img_inp)) {
       dataset(
@@ -1159,7 +1159,7 @@ train_mst_pmdn <- function(inputs,
     val_dataset <- dataset_fn(val_inputs, val_image_inputs, val_outputs)
     val_loader  <- dataloader(val_dataset, batch_size = batch_size, shuffle = FALSE, drop_last = TRUE)
   }
-  # --- Training Loop ---
+  # Training loop
   final_epoch <- NA
   for (epoch in seq.int(start_epoch, epochs)) {
     model$train()
