@@ -46,8 +46,8 @@ The implementation consists of several key functions and modules:
 ### Function: `t_cdf(z, nu, nu_switch = 20)`
 
 *   **Purpose:** Calculates a differentiable *approximation* of the univariate Student's t cumulative distribution function (CDF).
-*   **Method:** For `nu >= nu_switch`, transforms the input quantile `z` using a scaling factor derived from the degrees of freedom `nu`, then computes the standard normal CDF of the result using the error function (`erf`). Otherwise, uses `pt` from R and manually inserts a gradient for `z` into the computation graph and uses a finite difference approximation for `nu`. 
-*   **Context:** Switches between the fast approximation and the slow `pt` calculation. Essential for the loss function's skewness calculation. The approximation's accuracy is generally good, especially for larger `nu`.
+*   **Method:** For `nu >= nu_switch`, transforms the input quantile `z` using a scaling factor derived from the degrees of freedom `nu`, then computes the standard normal CDF of the result using the error function (`erf`). Otherwise, uses `pt` from R and manually inserts a gradient for `z` into the computation graph and uses a finite difference approximation for `nu`. Alternatively, can numerically integrate a torch-compatible probability density function `t_pdf_int`, which will be faster on GPUs.
+*   **Context:** Switches between the fast approximation and the slow `pt` calculation. Essential for the loss function's skewness calculation.
 
 ### Function: `sample_gamma(shape, scale, device)`
 
