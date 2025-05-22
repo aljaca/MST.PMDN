@@ -3,13 +3,17 @@
 # Wave-surge example (CCCRIS node 181947; Roberts Bank Superport)
 
 rm(list = ls())
-set.seed(1)
+
+seed <- 1747460809
+set.seed(seed)
+print(seed)
 
 library(mclust)
 library(MASS)
 library(ncdf4)
 library(scales)
 library(abind)
+library(scoringRules)
 source("../MST-PMDN.R")
 torch_set_num_threads(1)
 
@@ -17,15 +21,23 @@ torch_set_num_threads(1)
 # Tabular data (lag-1 wave-surge and first two harmonics of the annual cycle
 
 data <- read.csv("CCCRIS-181947_wave-surge_ERA5.csv")
+date <- data[-1, 1]
+
+# Training (1980-2015) and validation (2016-2019) splits 
+custom_split <- substr(date, 1, 4) <= 2015
 
 y <- data[, c("Wave.m", "Surge.m")]
-y <- apply(y, 2, function(x) scale(jitter(x, 5)))
+y <- jitter(as.matrix(y), 5)
 
+# Scale targets based on training split statistics
+y_mean <- apply(y[custom_split, ], 2, mean)
+y_sd <- apply(y[custom_split, ], 2, sd)
+y <- scale(y, center = y_mean, scale = y_sd)
+y1_min <- min(y[custom_split, 1])
+
+# Teacher forcing (lag-1 autocorrelation) and harmonics of the annual cycle
 y_lag1 <- y[-nrow(y), ]
 y <- y[-1, ]
-
-date <- data[-1, 1]
-custom_split <- substr(date, 1, 4) <= 2015
 
 doy <- as.numeric(format(as.Date(date), "%j"))
 doy_sc <- c()
@@ -34,7 +46,9 @@ for (i in 1:2) {
                   cos(2 * pi * i * doy / 365.25))
 }
 
-x <- scale(cbind(doy_sc, y_lag1))
+# Tabular predictors
+
+x <- cbind(doy_sc, y_lag1)
 
 ##
 # Image data (mean sea level pressure and sea level pressure gradient; 32 x 32)
@@ -47,12 +61,13 @@ nc <- nc_open("CCCRIS-181947_psl-grad2_ERA5.nc")
 psl_grad <- ncvar_get(nc, varid = "psl_grad")
 nc_close(nc)
 
-psl_mean <- apply(psl, c(1, 2), mean)
-psl_sd <- apply(psl, c(1, 2), sd)
+# Scale image predictors based on training split statistics
+psl_mean <- apply(psl[, , custom_split], c(1, 2), mean)
+psl_sd <- apply(psl[, , custom_split], c(1, 2), sd)
 psl <- sweep(sweep(psl, c(1, 2), psl_mean, "-"), c(1, 2), psl_sd, "/")
 
-psl_grad_mean <- apply(psl_grad, c(1, 2), mean)
-psl_grad_sd <- apply(psl_grad, c(1, 2), sd)
+psl_grad_mean <- apply(psl_grad[, , custom_split], c(1, 2), mean)
+psl_grad_sd <- apply(psl_grad[, , custom_split], c(1, 2), sd)
 psl_grad <- sweep(sweep(psl_grad, c(1, 2), psl_grad_mean, "-"), c(1, 2),
                   psl_grad_sd, "/")
 
@@ -62,124 +77,208 @@ x_image <- abind(psl, psl_grad, along = -1)
 x_image <- aperm(x_image, c(4, 1, 2, 3))
 x_image <- x_image[-1, , , ]
 
-rm(psl, psl_grad)
+##
+# Number of mixtures and constraints informed by model-based clustering
+# (mclust) on independent samples
+
+print(Mclust(y[which(custom_split)[c(TRUE, rep(FALSE, 6))], ], G = 1:10)$BIC)
 
 ##
-# Tabular module
+# Tabular module definition
 
 tabular_module <- nn_module(
   "TabularModule",
-  initialize = function(input_dim, hidden_dims, output_dim, dropout_rate) {
+  initialize = function(
+    input_dim,
+    hidden_dims,
+    output_dim,
+    dropout_rate
+  ) {
+    # Number of hidden layers
     if (is.null(hidden_dims) || length(hidden_dims) == 0) {
+      # No hidden layers
       self$n_hidden_layers <- 0
       self$hidden_dims <- c()
     } else if (!is.vector(hidden_dims) && !is.list(hidden_dims)) {
+      # Single hidden size passed, wrap into vector
       self$hidden_dims <- c(hidden_dims)
       self$n_hidden_layers <- length(self$hidden_dims)
     } else {
+      # Vector or list of hidden sizes
       self$hidden_dims <- hidden_dims
       self$n_hidden_layers <- length(self$hidden_dims)
     }
+    # Store output size and dropout rate
     self$output_dim <- output_dim
     self$dropout_rate <- dropout_rate
-
+    # Module lists for linear layers, batch-norms, (optional) dropouts
     self$layers <- nn_module_list()
     self$bns <- nn_module_list()
     if (self$dropout_rate > 0) {
-        self$dropouts <- nn_module_list()
+      self$dropouts <- nn_module_list()
     }
+    # Build hidden layers
     current_dim <- input_dim
     if (self$n_hidden_layers > 0) {
-      for (i in 1:self$n_hidden_layers) {
-        self$layers$append(nn_linear(current_dim, self$hidden_dims[[i]]))
-        self$bns$append(nn_batch_norm1d(self$hidden_dims[[i]]))
+      for (i in seq_len(self$n_hidden_layers)) {
+        # Linear transform
+        self$layers$append(
+          nn_linear(current_dim, self$hidden_dims[[i]])
+        )
+        # Batch normalization on hidden size
+        self$bns$append(
+          nn_batch_norm1d(self$hidden_dims[[i]])
+        )
+        # Optional dropout after activation
         if (self$dropout_rate > 0) {
-            self$dropouts$append(nn_dropout(p = self$dropout_rate))
+          self$dropouts$append(
+            nn_dropout(p = self$dropout_rate)
+          )
         }
+        # Update input size for next layer
         current_dim <- self$hidden_dims[[i]]
       }
     }
-    self$layers$append(nn_linear(current_dim, output_dim))
+    # Final linear layer: last hidden (or input) → output_dim
+    self$layers$append(
+      nn_linear(current_dim, output_dim)
+    )
   },
   forward = function(x) {
-    for (i in 1:self$n_hidden_layers) {
-      x <- self$layers[[i]](x)
-      x <- self$bns[[i]](x)
-      x <- nnf_relu(x)
+    # Pass through each hidden layer
+    for (i in seq_len(self$n_hidden_layers)) {
+      x <- self$layers[[i]](x)  # linear
+      x <- self$bns[[i]](x)     # batch-norm
+      x <- nnf_relu(x)          # activation
+      # Apply dropout if configured
       if (self$dropout_rate > 0 && !is.null(self$dropouts[[i]])) {
-          x <- self$dropouts[[i]](x)
+        x <- self$dropouts[[i]](x)
       }
     }
+    # Final projection and activation
     x <- self$layers[[length(self$layers)]](x)
     x <- nnf_relu(x)
     x
   }
 )
 
+##
+# Image module definition
+
+image_module <- nn_module(
+  "ImageModule",
+  initialize = function(
+    in_channels,
+    img_size,
+    conv_channels,
+    kernel_size = 3,
+    pool_kernel = 2,
+    output_dim = 32
+  ) {
+    # Store output dim
+    self$output_dim <- output_dim
+    # Build conv stack
+    self$n_conv <- length(conv_channels)
+    self$convs <- nn_module_list()
+    self$bn_conv <- nn_module_list()
+    # Track spatial dim through conv+pool
+    spatial <- img_size
+    pad <- floor(kernel_size / 2)
+    for (i in seq_along(conv_channels)) {
+      in_ch <- if (i == 1) in_channels else conv_channels[i-1]
+      out_ch <- conv_channels[i]
+      # conv keeps spatial size (with padding)
+      self$convs$append(
+        nn_conv2d(
+          in_channels = in_ch,
+          out_channels = out_ch,
+          kernel_size = kernel_size,
+          padding = pad
+        )
+      )
+      self$bn_conv$append(nn_batch_norm2d(out_ch))
+      # Pooling halves spatial dims
+      spatial <- floor(spatial / pool_kernel)
+    }
+    # Store pooling layer and computed flatten_dim
+    self$pool <- nn_max_pool2d(kernel_size = pool_kernel)
+    self$flatten_dim <- tail(conv_channels, 1) * spatial * spatial
+    # Final head: linear( flatten_dim → output_dim ) + BN
+    self$fc    <- nn_linear(self$flatten_dim, output_dim)
+    self$bn_fc <- nn_batch_norm1d(output_dim)
+  },
+  forward = function(x) {
+    # conv → BN → ReLU → pool
+    for (i in seq_len(self$n_conv)) {
+      x <- self$convs[[i]](x)
+      x <- self$bn_conv[[i]](x)
+      x <- nnf_relu(x)
+      x <- self$pool(x)
+    }
+    # Flatten and head
+    x <- torch_flatten(x, start_dim = 2)
+    x <- self$fc(x)
+    nnf_relu(self$bn_fc(x))
+  }
+)
+
+##
+# The TabularModule takes an input vector of length input_dim, runs it through 
+# two dense layers (input_dim→32 and 32→16) each with batch-norm (BN), ReLU and
+# 50 %  dropout, then applies a final 16→16 linear layer plus ReLU to produce a 
+# 16-dimensional output.
+
 tabular_mod <- tabular_module(
   input_dim = ncol(x),
   hidden_dims = c(32, 16),
   output_dim = 16,
-  dropout_rate = 0.1
+  dropout_rate = 0.5
 )
 
 ##
-# Image module
+# The ImageModule accepts a 2×32×32 image, applies a 3×3 conv (2→16) with BN, 
+#  ReLU  and 2×2 max-pool (→16×16), repeats with a 16→32 conv + BN, ReLU and 
+# max-pool (→8×8), flattens the 32×8×8 tensor to 2048 units, and then projects
+# it to 32 features via a linear layer, BN, and ReLU. Weight penalty (wd_image)
+# is applied during training.
 
-image_module <- nn_module(
-  initialize = function() {
-    self$conv1 <- nn_conv2d(in_channels = 2, out_channels = 16,
-                            kernel_size = 3, padding = 1)
-    self$bn1 <- nn_batch_norm2d(num_features = 16)
-    self$pool1 <- nn_max_pool2d(kernel_size = 2)
-    self$conv2 <- nn_conv2d(in_channels = 16, out_channels = 32,
-                            kernel_size = 3, padding = 1)
-    self$bn2 <- nn_batch_norm2d(num_features = 32)
-    self$pool2 <- nn_max_pool2d(kernel_size = 2)
-    self$flatten_dim <- 32 * 8 * 8
-    self$fc <- nn_linear(self$flatten_dim, 32)
-    self$bn_fc <- nn_batch_norm1d(num_features = 32)
-    self$output_dim <- 32
-  },
-  forward = function(x) {
-    x <- self$conv1(x)
-    x <- self$bn1(x)
-    x <- nnf_relu(x)
-    x <- self$pool1(x)
-    x <- self$conv2(x)
-    x <- self$bn2(x)
-    x <- nnf_relu(x)
-    x <- self$pool2(x)
-    x <- torch_flatten(x, start_dim = 2)
-    x <- self$fc(x)
-    x <- self$bn_fc(x)
-    nnf_relu(x)
-  }
+image_mod <- image_module(
+  in_channels = dim(x_image)[2],
+  img_size = dim(x_image)[3],
+  conv_channels = c(16, 32),
+  kernel_size = 3,
+  pool_kernel = 2,
+  output_dim = 32
 )
-
-image_mod <- image_module()
+wd_image <- 0.2
 
 ##
-# Fusion MLP
+# Dense fusion network that processes concatenated tabular and image features
+# and passes to the MST-PMDN head.
 
 hidden_dim <- c(64, 32)
+drop_hidden <- 0.5
 
 ## MST-MDN head
-# Volume (L)-Shape (A)-Orientation (D) and MST constraints
+# Predicts parameters of the mixture of MST distributions based on outputs
+# from the fusion network. Volume (L)-Shape (A)-Orientation (D) and MST
+# constraints applied
 
-modelname <- "VEV"
+modelname <- "VVI"
 skewtname <- "FN"
 constant_attr <- ""
-n_mixtures <- 4
+n_mixtures <- 5
 fixed_nu <- c(rep(50, n_mixtures - 1), NA)
 
-##
-# Model-based clustering (mclust) on independent samples
+out.pt <- paste0("wave-surge-dailymax.", modelname, skewtname,
+                 constant_attr, n_mixtures, ".pt")
+out.RData <- paste0("wave-surge-dailymax.", modelname, skewtname,
+                    constant_attr, n_mixtures, ".RData")
+out.pdf <- paste0("wave-surge-dailymax.", modelname, skewtname,
+                  constant_attr, n_mixtures, ".pdf")
 
-print(Mclust(y[which(custom_split)[c(TRUE, rep(FALSE, 5))], ], G = 1:10)$BIC)
-
 ##
-# Training/validation using tabular and image inputs
+# Training/validation of deep MST-PMDN network
 
 t1 <- Sys.time()
 fit <- train_mst_pmdn(
@@ -192,19 +291,21 @@ fit <- train_mst_pmdn(
   fixed_nu = fixed_nu,
   activation = nn_relu,
   range_nu = c(3., 50.),
+  nu_switch = 20.,
   max_alpha = 5.,
   min_vol_shape = 0.01,
   jitter = 1e-4,
   lr = 0.0001,
   max_norm = 1.,
-  epochs = 100,
-  batch_size = 16,
-  drop_hidden = 0.1,
-  wd_image = 1e-3,
+  epochs = 200,
+  batch_size = 32,
+  drop_hidden = drop_hidden,
+  wd_image = wd_image,
   wd_tabular = 0.,
   checkpoint_interval = 10,
   checkpoint_path = "wave-surge-checkpoint.pt",
   resume_from_checkpoint = FALSE,
+  model = NULL,
   early_stopping_patience = 20,
   validation_split = 0,
   custom_split = custom_split,
@@ -239,86 +340,216 @@ print(pred$nu[1:2, ])
 cat("alpha:\n")
 print(pred$alpha[1:2, , ])
 
-##
-# Stochastic samples (lag-1 autoregressive terms)
+cat("Validation statistics:\n")
+print(cor(y[!custom_split, ]))
+print(cor(samples[!custom_split, ]))
 
-rsamples <- matrix(0, ncol = 2, nrow = nrow(x))
-rsamples[1, ] <- y[1, ]
-for (i in 2:nrow(x)) {
-  if (i %% 100 == 0) cat(i, "")
-  x_i <- cbind(x[i, 1:(ncol(x) - 2), drop = FALSE],
-               rsamples[i - 1, , drop = FALSE])
-  x_image_i <- x_image[i , , , , drop=FALSE]
-  rsamples_i <- sample_mst_pmdn(predict_mst_pmdn(fit$model, x_i, x_image_i,
-                                                 device = "cpu"),
-                                num_samples = 1)$samples[1, , ]
-  rsamples[i, ] <- as.matrix(rsamples_i)
+print(cor(x[!custom_split, ], y[!custom_split, ]))
+print(cor(y[!custom_split, ], samples[!custom_split, ]))
+
+##
+# Stochastic ensemble generation on validation split
+
+x_valid <- x[!custom_split, ]
+x_image_valid <- x_image[!custom_split, , , ]
+y_valid <- y[!custom_split, ]
+
+n_ens <- 30
+rsamples_ens <- list()
+for(iii in seq(n_ens)){
+    rsamples_iii <- matrix(0, ncol = 2, nrow = nrow(x_valid))
+    rsamples_iii[1, ] <- y_valid[1, ]
+    cat(iii, '[', nrow(x_valid), '] : ')
+    for (i in 2:nrow(x_valid)) {
+      if (i %% 10 == 0) cat(i, "")
+      x_valid_i <- cbind(x_valid[i, 1:(ncol(x) - 2), drop = FALSE],
+                         rsamples_iii[i - 1, , drop = FALSE])
+      x_image_valid_i <- x_image_valid[i , , , , drop=FALSE]
+      rsamples_i <- sample_mst_pmdn(predict_mst_pmdn(fit$model,
+                                    x_valid_i, x_image_valid_i,
+                                    device = "cpu"),
+                                    num_samples = 1)$samples[1, , ]
+      rsamples_iii[i, ] <- as.matrix(rsamples_i)
+    }
+    rsamples_iii[rsamples_iii[, 1] < y1_min, 1] <- y1_min
+    colnames(rsamples_iii) <- paste("MST-PMDN", colnames(y_valid))
+    rsamples_ens[[iii]] <- rsamples_iii
+    cat("\n")
 }
-rsamples[rsamples[, 1] < min(y[, 1]), 1] <- min(y[, 1])
-cat("\n")
+
+escore_valid <- y_valid[, 1] * NA
+for(i in seq(nrow(y_valid))) {
+  y_i <- y_valid[i, ]
+  dat_i <- sapply(rsamples_ens, function(x, i) x[i, ], i = i)
+  escore_valid[i] <- es_sample(y_i, dat_i)
+}
+cat("Energy score valid:", mean(escore_valid), "\n")
 
 ##
-# Compare with model-based clustering
+# Evaluation plots
 
-mc <- Mclust(y, G = n_mixtures, modelNames = modelname)
-print(mc$df)
-print(mc$loglik)
-mc_samples <- sim(modelName = mc$modelName,
-                  parameters = mc$parameters,
-                  n = nrow(y))[, -1]
-mc_samples[mc_samples[, 1] < min(y[, 1]), 1] <- min(y[, 1])
-
-colnames(y) <- colnames(samples) <- colnames(rsamples) <-
-  colnames(mc_samples) <- c("Z[Wave+1]", "Z[Surge+1]")
+pdf(out.pdf, width = 10, height = 8)
 
 ##
-# Plot data and random samples
+# Training and validation curves
 
-pdf("wave-surge-dailymax.pdf", width = 12, height = 8)
-
-pch <- 19
-cex <- 1.5
-par(mfrow = c(2, 3), mar = c(4.5, 4.5, 3.5, 1))
-plot(y[, 1], y[, 2], main = "Original Data", col = alpha("black", 0.01),
-     pch = pch, cex = cex, xlab = colnames(y)[1], ylab = colnames(y)[2])
-plot(rsamples[, 1], rsamples[, 2], xlab = colnames(y)[1], ylab = colnames(y)[2],
-     main = "MST-PMDN samples", col = alpha("darkblue", 0.01), pch = pch,
-     cex = cex)
-plot(mc_samples[, 1], mc_samples[, 2], xlab = colnames(y)[1],
-     ylab = colnames(y)[2], main = "mclust samples", col = alpha("red", 0.01),
-     pch = pch, cex = cex)
-image(MASS::kde2d(y[, 1], y[, 2]))
-image(MASS::kde2d(rsamples[, 1], rsamples[, 2]))
-image(MASS::kde2d(mc_samples[, 1], mc_samples[, 2]))
-
-acf(y, col = "black", lwd = 3)
-acf(rsamples, col = "darkblue", lwd = 4)
-acf(mc_samples, col = "red", lwd = 4)
-
-par(mfrow = c(1, 1))
-hist(as.numeric(pred$nu[, ncol(pred$nu)]), border = NA, xlab = "nu",
-     main = "MST-PMDN component with\nvariable degrees of freedom",
-     freq = FALSE, col = "darkblue")
-box()
-abline(v = 30)
-
-par(mfrow = c(1, 2))
-qqplot(y[, 1], rsamples[, 1], xlab = "y1", ylab = "rsamples1")
-abline(0, 1, col = "red", lty = 2, lwd = 2)
+matplot(cbind(fit$train_loss_history/fit$train_loss_history[1],
+        fit$val_loss_history/fit$val_loss_history[1]), type = "b",
+        pch=15, ylab = "Loss", xlab = "Epoch")
 grid()
-qqplot(y[, 2], rsamples[, 2], xlab = "y2", ylab = "rsamples2")
-abline(0, 1, col = "red", lty = 2, lwd = 2)
+legend("topright", c("Train", "Validation"), col = c(1, 2), pch = 15)
+
+dev.next()
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+plot(y_valid[, 1], y_valid[, 2], main = "Original Data",
+     col = alpha("black", 0.2), pch = 19, cex = 1.5, xlab = colnames(y)[1],
+     ylab = colnames(y)[2])
+plot(rsamples_ens[[1]][, 1], rsamples_ens[[1]][, 2], xlab = colnames(y)[1],
+     ylab = colnames(y)[2], main = "MST-PMDN samples",
+     col = alpha("darkblue", 0.2), pch = 19, cex = 1.5)
+image(MASS::kde2d(y_valid[, 1], y_valid[, 2]))
+image(MASS::kde2d(rsamples_ens[[1]][, 1], rsamples_ens[[1]][, 2]))
+
+dev.next()
+par(mfrow = c(2, 2), mar = c(4, 4, 4, 1))
+acf(y_valid[, 1, drop=FALSE], lwd = 2)
+acf(y_valid[, 2, drop=FALSE], lwd = 2)
+acf(rsamples_ens[[1]][, 1, drop=FALSE], col = "blue", lwd = 2)
+acf(rsamples_ens[[1]][, 2, drop=FALSE], col = "blue", lwd = 2)
+
+dev.next()
+lims <- apply(do.call(rbind, rsamples_ens), 2, function(x) range(pretty(x)))
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+for(i in seq(ncol(y_valid))) {
+    qqplot(y_valid[, i], y_valid[, i], main = colnames(y)[i],
+         col = NA, pch = NA, xlab = "Original Data",
+         ylab = "MST-PMDN samples", xlim = lims[, i], ylim = lims[, i])
+    for(ens in seq_along(rsamples_ens)) {
+        points(sort(y_valid[, i]), sort(rsamples_ens[[ens]][, i]),
+               pch='+', col = alpha("darkblue", 0.05))
+    }
+    grid()
+    abline(0, 1, lty = 2)
+}
+for(i in seq(ncol(y_valid))) {
+    plot(as.Date(date[!custom_split]), y_valid[, i], pch = 1, cex = 0.75,
+         xlab = "Date", ylab = colnames(y)[i], ylim = lims[, i])
+    for(ens in seq_along(rsamples_ens)) {
+        points(as.Date(date[!custom_split]), rsamples_ens[[ens]][, i],
+               pch='+', col = alpha("darkblue", 0.05))
+    }
+    grid()
+}
+
+##
+# Time series of degrees-of-freedom nu
+
+dev.next()
+plot(as.Date(date[!custom_split]), pred$nu[!custom_split, n_mixtures],
+     xlab = "Year", ylab = expression(nu), ylim=c(0, 51), type = "p",
+     pch = 15, col = alpha("blue", 0.5))
 grid()
+abline(h = 3, col = "red")
+abline(h = 50, col = "black")
+abline(h = 30, col = "dark blue", lty = 2)
+
+##
+# Ensemble verification
+
+multivar_rank_histograms_4panel <- function(
+    obs, ens, weights = NULL,
+    main_titles = c("Energy Score", "Mean", "Variance", "Dependence"),
+    xlab = "Rank", ylab = "Frequency",
+    nbins = NULL, plot = TRUE
+) {
+  N <- nrow(obs)
+  d <- ncol(obs)
+  M <- length(ens)
+  stopifnot(all(sapply(ens, function(e) all(dim(e) == c(N, d)))))
+  if (is.null(weights)) {
+    weights <- matrix(1, nrow = d, ncol = d)
+    diag(weights) <- 0
+  }
+  # Pre-rank functions
+  energy_score <- function(x0, Xm) {
+    M <- nrow(Xm)
+    mean(sqrt(rowSums((Xm - matrix(x0, nrow = M, ncol = d, byrow = TRUE))^2))) -
+      0.5 * mean(as.matrix(dist(Xm)))
+  }
+  mean_prerank <- function(x) mean(x)
+  variance_prerank <- function(x) mean((x - mean(x))^2)
+  dependence_prerank <- function(x) {
+    s2 <- mean((x - mean(x))^2)
+    if (s2 == 0) return(0)
+    dep <- - sum(weights * (outer(x, x, "-")^2)) / s2
+    return(dep)
+  }
+  rank_lists <- list(
+    energy = integer(N),
+    mean = integer(N),
+    variance = integer(N),
+    dependence = integer(N)
+  )
+  for (i in 1:N) {
+    Xm <- sapply(ens, function(e) e[i, ], simplify = "array")
+    Xm <- t(matrix(Xm, nrow = d))
+    # Energy score
+    es_ens <- sapply(1:M, function(m) energy_score(Xm[m, ], Xm))
+    es_obs <- energy_score(obs[i, ], Xm)
+    all_es <- c(es_ens, es_obs)
+    rank_lists$energy[i] <- rank(all_es, ties.method = "random")[M + 1]
+    # Mean
+    mean_ens <- rowMeans(Xm)
+    mean_obs <- mean(obs[i, ])
+    all_mean <- c(mean_ens, mean_obs)
+    rank_lists$mean[i] <- rank(all_mean, ties.method = "random")[M + 1]
+    # Variance
+    var_ens <- apply(Xm, 1, variance_prerank)
+    var_obs <- variance_prerank(obs[i, ])
+    all_var <- c(var_ens, var_obs)
+    rank_lists$variance[i] <- rank(all_var, ties.method = "random")[M + 1]
+    # Dependence
+    dep_ens <- apply(Xm, 1, dependence_prerank)
+    dep_obs <- dependence_prerank(obs[i, ])
+    all_dep <- c(dep_ens, dep_obs)
+    rank_lists$dependence[i] <- rank(all_dep, ties.method = "random")[M + 1]
+  }
+  # Binning setup
+  if (is.null(nbins)) nbins <- M + 1
+  # Range of possible ranks: [1, M+1]
+  bin_edges <- seq(1, M + 1 + 1e-8, length.out = nbins + 1)
+  bin_centers <- (bin_edges[-1] + bin_edges[-length(bin_edges)]) / 2
+
+  if (plot) {
+    op <- par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+    for (k in c("energy", "mean", "variance", "dependence")) {
+      hcounts <- hist(rank_lists[[k]], breaks = bin_edges, plot = FALSE)$counts
+      barplot(hcounts, names.arg = round(bin_centers, 1),
+              main = main_titles[match(k, c("energy", "mean", "variance",
+              "dependence"))], xlab = xlab, ylab = ylab,
+              col = alpha("blue", 0.5), border = NA)
+      abline(h = N / nbins, col = "red", lty = 2)
+      box()
+    }
+    par(op)
+  }
+  invisible(list(
+    ranks = rank_lists,
+    bin_edges = bin_edges,
+    bin_centers = bin_centers
+  ))
+}
+
+dev.next()
+mrh_valid <- multivar_rank_histograms_4panel(y_valid, rsamples_ens,
+               nbins = n_ens / 2)
 
 dev.off()
 
-cat("Validation statistics:\n")
-print(cor(y[!custom_split, ]))
-print(cor(mc_samples[!custom_split, ]))
-print(cor(rsamples[!custom_split, ]))
+##
+# Save pt and RData files
 
-print(cor(x[!custom_split, ], y[!custom_split, ]))
-print(cor(y[!custom_split, ], mc_samples[!custom_split, ]))
-print(cor(y[!custom_split, ], rsamples[!custom_split, ]))
+torch_save(fit$model, out.pt)
+save.image(file = out.RData)
 
 ################################################################################
