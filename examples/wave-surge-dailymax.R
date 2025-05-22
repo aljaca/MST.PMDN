@@ -1,19 +1,13 @@
 ################################################################################
 # Multivariate skew t-Parsimonious Mixture Density Network (MST-PMDN)
 # Wave-surge example (CCCRIS node 181947; Roberts Bank Superport)
-
-rm(list = ls())
+# Uses: torch, ncdf4, abind, mclust, MASS, scales, abind, scoringRules, ddalpha
 
 seed <- 1747460809
 set.seed(seed)
 print(seed)
 
 library(mclust)
-library(MASS)
-library(ncdf4)
-library(scales)
-library(abind)
-library(scoringRules)
 source("../MST-PMDN.R")
 torch_set_num_threads(1)
 
@@ -53,13 +47,13 @@ x <- cbind(doy_sc, y_lag1)
 ##
 # Image data (mean sea level pressure and sea level pressure gradient; 32 x 32)
 
-nc <- nc_open("CCCRIS-181947_psl2_ERA5.nc")
-psl <- ncvar_get(nc, varid = "psl")
-nc_close(nc)
+nc <- ncdf4::nc_open("CCCRIS-181947_psl2_ERA5.nc")
+psl <- ncdf4::ncvar_get(nc, varid = "psl")
+ncdf4::nc_close(nc)
 
-nc <- nc_open("CCCRIS-181947_psl-grad2_ERA5.nc")
-psl_grad <- ncvar_get(nc, varid = "psl_grad")
-nc_close(nc)
+nc <- ncdf4::nc_open("CCCRIS-181947_psl-grad2_ERA5.nc")
+psl_grad <- ncdf4::ncvar_get(nc, varid = "psl_grad")
+ncdf4::nc_close(nc)
 
 # Scale image predictors based on training split statistics
 psl_mean <- apply(psl[, , custom_split], c(1, 2), mean)
@@ -71,7 +65,7 @@ psl_grad_sd <- apply(psl_grad[, , custom_split], c(1, 2), sd)
 psl_grad <- sweep(sweep(psl_grad, c(1, 2), psl_grad_mean, "-"), c(1, 2),
                   psl_grad_sd, "/")
 
-x_image <- abind(psl, psl_grad, along = -1)
+x_image <- abind::abind(psl, psl_grad, along = -1)
 
 # Reshape [time x channels x lon x lat]
 x_image <- aperm(x_image, c(4, 1, 2, 3))
@@ -267,7 +261,7 @@ drop_hidden <- 0.5
 modelname <- "VVI"
 skewtname <- "FN"
 constant_attr <- ""
-n_mixtures <- 5
+n_mixtures <- 6
 fixed_nu <- c(rep(50, n_mixtures - 1), NA)
 
 out.pt <- paste0("wave-surge-dailymax.", modelname, skewtname,
@@ -381,7 +375,7 @@ escore_valid <- y_valid[, 1] * NA
 for(i in seq(nrow(y_valid))) {
   y_i <- y_valid[i, ]
   dat_i <- sapply(rsamples_ens, function(x, i) x[i, ], i = i)
-  escore_valid[i] <- es_sample(y_i, dat_i)
+  escore_valid[i] <- scoringRules::es_sample(y_i, dat_i)
 }
 cat("Energy score valid:", mean(escore_valid), "\n")
 
@@ -402,11 +396,11 @@ legend("topright", c("Train", "Validation"), col = c(1, 2), pch = 15)
 dev.next()
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
 plot(y_valid[, 1], y_valid[, 2], main = "Original Data",
-     col = alpha("black", 0.2), pch = 19, cex = 1.5, xlab = colnames(y)[1],
-     ylab = colnames(y)[2])
+     col = scales::alpha("black", 0.2), pch = 19, cex = 1.5,
+     xlab = colnames(y)[1], ylab = colnames(y)[2])
 plot(rsamples_ens[[1]][, 1], rsamples_ens[[1]][, 2], xlab = colnames(y)[1],
      ylab = colnames(y)[2], main = "MST-PMDN samples",
-     col = alpha("darkblue", 0.2), pch = 19, cex = 1.5)
+     col = scales::alpha("darkblue", 0.2), pch = 19, cex = 1.5)
 image(MASS::kde2d(y_valid[, 1], y_valid[, 2]))
 image(MASS::kde2d(rsamples_ens[[1]][, 1], rsamples_ens[[1]][, 2]))
 
@@ -426,7 +420,7 @@ for(i in seq(ncol(y_valid))) {
          ylab = "MST-PMDN samples", xlim = lims[, i], ylim = lims[, i])
     for(ens in seq_along(rsamples_ens)) {
         points(sort(y_valid[, i]), sort(rsamples_ens[[ens]][, i]),
-               pch='+', col = alpha("darkblue", 0.05))
+               pch='+', col = scales::alpha("darkblue", 0.05))
     }
     grid()
     abline(0, 1, lty = 2)
@@ -436,7 +430,7 @@ for(i in seq(ncol(y_valid))) {
          xlab = "Date", ylab = colnames(y)[i], ylim = lims[, i])
     for(ens in seq_along(rsamples_ens)) {
         points(as.Date(date[!custom_split]), rsamples_ens[[ens]][, i],
-               pch='+', col = alpha("darkblue", 0.05))
+               pch='+', col = scales::alpha("darkblue", 0.05))
     }
     grid()
 }
@@ -447,7 +441,7 @@ for(i in seq(ncol(y_valid))) {
 dev.next()
 plot(as.Date(date[!custom_split]), pred$nu[!custom_split, n_mixtures],
      xlab = "Year", ylab = expression(nu), ylim=c(0, 51), type = "p",
-     pch = 15, col = alpha("blue", 0.5))
+     pch = 15, col = scales::alpha("blue", 0.5))
 grid()
 abline(h = 3, col = "red")
 abline(h = 50, col = "black")
@@ -457,86 +451,158 @@ abline(h = 30, col = "dark blue", lty = 2)
 # Ensemble verification
 
 multivar_rank_histograms_4panel <- function(
-    obs, ens, weights = NULL,
-    main_titles = c("Energy Score", "Mean", "Variance", "Dependence"),
+    obs, ens,
+    main_titles = c("Energy Score", "Mean", "Variance", "Half-space Depth"),
     xlab = "Rank", ylab = "Frequency",
     nbins = NULL, plot = TRUE
 ) {
+  if (!requireNamespace("ddalpha", quietly = TRUE)) {
+    stop("Package 'ddalpha' is required for half-space depth.", call. = FALSE)
+  }
   N <- nrow(obs)
   d <- ncol(obs)
   M <- length(ens)
-  stopifnot(all(sapply(ens, function(e) all(dim(e) == c(N, d)))))
-  if (is.null(weights)) {
-    weights <- matrix(1, nrow = d, ncol = d)
-    diag(weights) <- 0
+  if (!all(sapply(ens, function(e) is.matrix(e) && all(dim(e) == c(N, d))))) {
+    stop("Each element of 'ens' must have dimensions eqaul to 'obs' (N x d).")
   }
+  if (d < 1) stop("'obs' and 'ens' members must have d >= 1.")
   # Pre-rank functions
-  energy_score <- function(x0, Xm) {
-    M <- nrow(Xm)
-    mean(sqrt(rowSums((Xm - matrix(x0, nrow = M, ncol = d, byrow = TRUE))^2))) -
-      0.5 * mean(as.matrix(dist(Xm)))
+  energy_score <- function(x0_vec, Xm_mat) {
+    # x0_vec: a single d-dimensional observation vector (the point being scored)
+    # Xm_mat: an K x d matrix of K points defining the forecast distribution
+    current_K <- nrow(Xm_mat) # Note: K might be M or M+1 depending on context
+    if (is.null(current_K) || current_K == 0) return(NA)
+    # Term 1: Mean distance from x0_vec to each row in Xm_mat
+    term1 <- mean(sqrt(rowSums(sweep(Xm_mat, 2, x0_vec, "-")^2)))
+    # Term 2: 0.5 * Mean pairwise distance among rows of Xm_mat
+    if (current_K == 1) {
+        term2 <- 0 
+    } else {
+        term2 <- 0.5 * mean(dist(Xm_mat))
+    }
+    return(term1 - term2)
   }
-  mean_prerank <- function(x) mean(x)
-  variance_prerank <- function(x) mean((x - mean(x))^2)
-  dependence_prerank <- function(x) {
-    s2 <- mean((x - mean(x))^2)
-    if (s2 == 0) return(0)
-    dep <- - sum(weights * (outer(x, x, "-")^2)) / s2
-    return(dep)
+  mean_prerank <- function(x_vec) mean(x_vec)
+  variance_prerank <- function(x_vec) {
+    if (length(x_vec) == 0) return(NA)
+    m_x <- mean(x_vec)
+    return(mean((x_vec - m_x)^2))
   }
   rank_lists <- list(
     energy = integer(N),
     mean = integer(N),
     variance = integer(N),
-    dependence = integer(N)
+    halfspace_depth = integer(N)
   )
   for (i in 1:N) {
-    Xm <- sapply(ens, function(e) e[i, ], simplify = "array")
-    Xm <- t(matrix(Xm, nrow = d))
-    # Energy score
-    es_ens <- sapply(1:M, function(m) energy_score(Xm[m, ], Xm))
-    es_obs <- energy_score(obs[i, ], Xm)
-    all_es <- c(es_ens, es_obs)
-    rank_lists$energy[i] <- rank(all_es, ties.method = "random")[M + 1]
-    # Mean
+    Xm_list <- lapply(ens, function(e) e[i, ])
+    if (d == 1) {
+        Xm <- matrix(unlist(Xm_list), ncol = 1)
+    } else {
+        Xm <- do.call(rbind, Xm_list)
+    }
+    if(nrow(Xm) != M || ncol(Xm) != d) {
+        stop(paste0("Xm dimensions are incorrect at iteration i=", i, 
+                   ". Expected ", M, "x", d, ", Got ", nrow(Xm), "x", ncol(Xm)))
+    }
+    # Current observation vector, ensured to be a 1-row matrix
+    obs_i_vec <- obs[i, ]
+    obs_i_mat <- matrix(obs_i_vec, nrow = 1, ncol = d)
+    # Create the combined data matrix: (M+1) x d for symmetrical calculations
+    X_all_i <- rbind(Xm, obs_i_mat)
+    # Energy Score Rank
+    # Calculate energy score for each of the M+1 items (rows in X_all_i)
+    # with respect to the entire combined cloud X_all_i.
+    all_es_values <- sapply(1:(M + 1), function(k) {
+      # The k-th item (X_all_i[k,]) is scored against the distribution formed
+      # by all M+1 items (X_all_i)
+      energy_score(x0_vec = X_all_i[k, ], Xm_mat = X_all_i)
+    })
+    if(anyNA(all_es_values)) { 
+      rank_lists$energy[i] <- NA
+    } else {
+      # The observation is the (M+1)-th item in X_all_i.
+      # Rank all M+1 energy scores. The rank of the (M+1)-th score is the rank
+      # of the observation.
+      rank_lists$energy[i] <- rank(all_es_values, ties.method = "random",
+        na.last = "keep")[M + 1]
+    }
+    # Mean Rank
+    # This pre-rank is univariate (mean of components) and doesn't rely on a
+    # reference cloud in the same way.
     mean_ens <- rowMeans(Xm)
-    mean_obs <- mean(obs[i, ])
+    mean_obs <- mean(obs_i_vec)
     all_mean <- c(mean_ens, mean_obs)
-    rank_lists$mean[i] <- rank(all_mean, ties.method = "random")[M + 1]
-    # Variance
-    var_ens <- apply(Xm, 1, variance_prerank)
-    var_obs <- variance_prerank(obs[i, ])
-    all_var <- c(var_ens, var_obs)
-    rank_lists$variance[i] <- rank(all_var, ties.method = "random")[M + 1]
-    # Dependence
-    dep_ens <- apply(Xm, 1, dependence_prerank)
-    dep_obs <- dependence_prerank(obs[i, ])
-    all_dep <- c(dep_ens, dep_obs)
-    rank_lists$dependence[i] <- rank(all_dep, ties.method = "random")[M + 1]
-  }
-  # Binning setup
-  if (is.null(nbins)) nbins <- M + 1
-  # Range of possible ranks: [1, M+1]
-  bin_edges <- seq(1, M + 1 + 1e-8, length.out = nbins + 1)
-  bin_centers <- (bin_edges[-1] + bin_edges[-length(bin_edges)]) / 2
+    if(anyNA(all_mean)) { rank_lists$mean[i] <- NA
+    } else { rank_lists$mean[i] <- rank(all_mean, ties.method = "random",
+      na.last = "keep")[M + 1] }
 
+    # Variance Rank
+    # Similar to mean, this is a univariate summary of components.
+    var_ens <- apply(Xm, 1, variance_prerank)
+    var_obs <- variance_prerank(obs_i_vec)
+    all_var <- c(var_ens, var_obs)
+     if(anyNA(all_var)) { rank_lists$variance[i] <- NA
+    } else { rank_lists$variance[i] <- rank(all_var, ties.method = "random",
+      na.last = "keep")[M + 1] }
+
+    # Half-space Depth Rank
+    all_hs_depth_values <- ddalpha::depth.halfspace(x = X_all_i, data = X_all_i)
+    if(anyNA(all_hs_depth_values)) { 
+      rank_lists$halfspace_depth[i] <- NA
+    } else {
+      rank_lists$halfspace_depth[i] <- rank(all_hs_depth_values,
+        ties.method = "random", na.last = "keep")[M + 1]
+    }
+  }
+  if (is.null(nbins)) nbins <- M + 1
+  bin_edges <- seq(0.5, M + 1.5, length.out = nbins + 1)
+  if (nbins == M + 1) {
+    bar_names_to_use <- as.character(1:(M + 1))
+  } else {
+    bar_names_to_use <- character(nbins)
+    for (j in 1:nbins) {
+      r_start <- if (j == 1) { ceiling(bin_edges[j]) } else { 
+        floor(bin_edges[j]) + 1 }
+      r_end <- floor(bin_edges[j+1])
+      r_start <- max(1, r_start)
+      r_end <- min(M + 1, r_end)
+      if (r_start == r_end) { bar_names_to_use[j] <- as.character(r_start)
+      } else if (r_start > r_end) { mid_val <- (bin_edges[j] +
+                                      bin_edges[j+1]) / 2
+        bar_names_to_use[j] <- sprintf("%.0f", mid_val)
+      } else { bar_names_to_use[j] <- paste0(r_start, "-", r_end) }
+    }
+  }
+  numeric_bin_centers <- (bin_edges[-1] + bin_edges[-length(bin_edges)]) / 2
   if (plot) {
-    op <- par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
-    for (k in c("energy", "mean", "variance", "dependence")) {
-      hcounts <- hist(rank_lists[[k]], breaks = bin_edges, plot = FALSE)$counts
-      barplot(hcounts, names.arg = round(bin_centers, 1),
-              main = main_titles[match(k, c("energy", "mean", "variance",
-              "dependence"))], xlab = xlab, ylab = ylab,
-              col = alpha("blue", 0.5), border = NA)
-      abline(h = N / nbins, col = "red", lty = 2)
-      box()
+    op <- par(mfrow = c(2, 2), mar = c(4.5, 4.5, 2.1, 1), oma = c(0,0,2,0))
+    plot_types <- c("energy", "mean", "variance", "halfspace_depth")
+    for (k_idx in 1:length(plot_types)) {
+      k <- plot_types[k_idx]
+      current_ranks <- rank_lists[[k]]
+      if(all(is.na(current_ranks))) {
+          plot(1, type="n", xlab=xlab, ylab=ylab, main=main_titles[k_idx], 
+               xlim=c(0.5, M+1.5), ylim=c(0, N))
+          text(mean(par("usr")[1:2]), mean(par("usr")[3:4]),
+            "All rank data are NA", cex=1.2)
+          box(); abline(h = N / nbins, col = "red", lty = 2, lwd=1.5); next
+      }
+      h <- hist(current_ranks, breaks = bin_edges, plot = FALSE)
+      hcounts <- h$counts
+      barplot(hcounts, names.arg = bar_names_to_use, main = main_titles[k_idx], 
+              xlab = xlab, ylab = ylab, col = "#1E90FFB3", border = "white", 
+              ylim = c(0, max(N/nbins*1.5, max(hcounts, na.rm=TRUE)*1.1,
+              na.rm=TRUE)+1), cex.names = 0.8, cex.axis = 0.8, cex.lab = 0.9,
+              cex.main = 1)
+      abline(h = N / nbins, col = "red", lty = 2, lwd=1.5); box()
     }
     par(op)
   }
   invisible(list(
     ranks = rank_lists,
     bin_edges = bin_edges,
-    bin_centers = bin_centers
+    bin_centers = numeric_bin_centers
   ))
 }
 
