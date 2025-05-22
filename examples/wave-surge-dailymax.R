@@ -3,7 +3,7 @@
 # Wave-surge example (CCCRIS node 181947; Roberts Bank Superport)
 # Uses: torch, ncdf4, abind, mclust, MASS, scales, abind, scoringRules, ddalpha
 
-seed <- 1747460809
+seed <- 1747892421
 set.seed(seed)
 print(seed)
 
@@ -75,7 +75,8 @@ x_image <- x_image[-1, , , ]
 # Number of mixtures and constraints informed by model-based clustering
 # (mclust) on independent samples
 
-print(Mclust(y[which(custom_split)[c(TRUE, rep(FALSE, 6))], ], G = 1:10)$BIC)
+mc <- Mclust(y[which(custom_split)[c(TRUE, rep(FALSE, 6))], ], G = 1:10)
+print(mc$BIC)
 
 ##
 # Tabular module definition
@@ -454,7 +455,8 @@ multivar_rank_histograms_4panel <- function(
     obs, ens,
     main_titles = c("Energy Score", "Mean", "Variance", "Half-space Depth"),
     xlab = "Rank", ylab = "Frequency",
-    nbins = NULL, plot = TRUE
+    nbins = NULL, plot = TRUE,
+    plot_density = TRUE
 ) {
   if (!requireNamespace("ddalpha", quietly = TRUE)) {
     stop("Package 'ddalpha' is required for half-space depth.", call. = FALSE)
@@ -462,20 +464,17 @@ multivar_rank_histograms_4panel <- function(
   N <- nrow(obs)
   d <- ncol(obs)
   M <- length(ens)
+  # Validate input dimensions
   if (!all(sapply(ens, function(e) is.matrix(e) && all(dim(e) == c(N, d))))) {
-    stop("Each element of 'ens' must have dimensions eqaul to 'obs' (N x d).")
+    stop("Each element of 'ens' must have dim the same as 'obs' (N x d).")
   }
   if (d < 1) stop("'obs' and 'ens' members must have d >= 1.")
   # Pre-rank functions
   energy_score <- function(x0_vec, Xm_mat) {
-    # x0_vec: a single d-dimensional observation vector (the point being scored)
-    # Xm_mat: an K x d matrix of K points defining the forecast distribution
-    current_K <- nrow(Xm_mat) # Note: K might be M or M+1 depending on context
+    current_K <- nrow(Xm_mat) 
     if (is.null(current_K) || current_K == 0) return(NA)
-    # Term 1: Mean distance from x0_vec to each row in Xm_mat
     term1 <- mean(sqrt(rowSums(sweep(Xm_mat, 2, x0_vec, "-")^2)))
-    # Term 2: 0.5 * Mean pairwise distance among rows of Xm_mat
-    if (current_K == 1) {
+    if (current_K == 1) { 
         term2 <- 0 
     } else {
         term2 <- 0.5 * mean(dist(Xm_mat))
@@ -501,75 +500,62 @@ multivar_rank_histograms_4panel <- function(
     } else {
         Xm <- do.call(rbind, Xm_list)
     }
+    
     if(nrow(Xm) != M || ncol(Xm) != d) {
         stop(paste0("Xm dimensions are incorrect at iteration i=", i, 
                    ". Expected ", M, "x", d, ", Got ", nrow(Xm), "x", ncol(Xm)))
     }
-    # Current observation vector, ensured to be a 1-row matrix
     obs_i_vec <- obs[i, ]
     obs_i_mat <- matrix(obs_i_vec, nrow = 1, ncol = d)
-    # Create the combined data matrix: (M+1) x d for symmetrical calculations
     X_all_i <- rbind(Xm, obs_i_mat)
-    # Energy Score Rank
-    # Calculate energy score for each of the M+1 items (rows in X_all_i)
-    # with respect to the entire combined cloud X_all_i.
+    # Energy Score Rank (Symmetrical)
     all_es_values <- sapply(1:(M + 1), function(k) {
-      # The k-th item (X_all_i[k,]) is scored against the distribution formed
-      # by all M+1 items (X_all_i)
       energy_score(x0_vec = X_all_i[k, ], Xm_mat = X_all_i)
     })
-    if(anyNA(all_es_values)) { 
-      rank_lists$energy[i] <- NA
-    } else {
-      # The observation is the (M+1)-th item in X_all_i.
-      # Rank all M+1 energy scores. The rank of the (M+1)-th score is the rank
-      # of the observation.
-      rank_lists$energy[i] <- rank(all_es_values, ties.method = "random",
-        na.last = "keep")[M + 1]
-    }
+    if(anyNA(all_es_values)) { rank_lists$energy[i] <- NA
+    } else { rank_lists$energy[i] <- rank(all_es_values, ties.method = "random",
+      na.last = "keep")[M + 1] }
     # Mean Rank
-    # This pre-rank is univariate (mean of components) and doesn't rely on a
-    # reference cloud in the same way.
     mean_ens <- rowMeans(Xm)
     mean_obs <- mean(obs_i_vec)
     all_mean <- c(mean_ens, mean_obs)
     if(anyNA(all_mean)) { rank_lists$mean[i] <- NA
     } else { rank_lists$mean[i] <- rank(all_mean, ties.method = "random",
       na.last = "keep")[M + 1] }
-
     # Variance Rank
-    # Similar to mean, this is a univariate summary of components.
     var_ens <- apply(Xm, 1, variance_prerank)
     var_obs <- variance_prerank(obs_i_vec)
     all_var <- c(var_ens, var_obs)
      if(anyNA(all_var)) { rank_lists$variance[i] <- NA
     } else { rank_lists$variance[i] <- rank(all_var, ties.method = "random",
       na.last = "keep")[M + 1] }
-
-    # Half-space Depth Rank
+    # Half-space Depth Rank (Symmetrical)
     all_hs_depth_values <- ddalpha::depth.halfspace(x = X_all_i, data = X_all_i)
     if(anyNA(all_hs_depth_values)) { 
       rank_lists$halfspace_depth[i] <- NA
     } else {
       rank_lists$halfspace_depth[i] <- rank(all_hs_depth_values,
-        ties.method = "random", na.last = "keep")[M + 1]
+      ties.method = "random", na.last = "keep")[M + 1]
     }
   }
   if (is.null(nbins)) nbins <- M + 1
-  bin_edges <- seq(0.5, M + 1.5, length.out = nbins + 1)
+  # `bin_edges` define the boundaries for hist. Ranks are integers from 1 to M+1.
+  # These edges ensure that each integer rank (if nbins = M+1) falls in the
+  # middle of a bin.
+  bin_edges <- seq(0.5, M + 1.5, length.out = nbins + 1) 
+  # Determine bar_names for x-axis labels
   if (nbins == M + 1) {
     bar_names_to_use <- as.character(1:(M + 1))
   } else {
     bar_names_to_use <- character(nbins)
     for (j in 1:nbins) {
-      r_start <- if (j == 1) { ceiling(bin_edges[j]) } else { 
+      r_start <- if (j == 1) { ceiling(bin_edges[j]) } else {
         floor(bin_edges[j]) + 1 }
       r_end <- floor(bin_edges[j+1])
-      r_start <- max(1, r_start)
-      r_end <- min(M + 1, r_end)
+      r_start <- max(1, r_start); r_end <- min(M + 1, r_end)
       if (r_start == r_end) { bar_names_to_use[j] <- as.character(r_start)
-      } else if (r_start > r_end) { mid_val <- (bin_edges[j] +
-                                      bin_edges[j+1]) / 2
+      } else if (r_start > r_end) { mid_val <- (bin_edges[j] + 
+        bin_edges[j+1]) / 2
         bar_names_to_use[j] <- sprintf("%.0f", mid_val)
       } else { bar_names_to_use[j] <- paste0(r_start, "-", r_end) }
     }
@@ -578,37 +564,58 @@ multivar_rank_histograms_4panel <- function(
   if (plot) {
     op <- par(mfrow = c(2, 2), mar = c(4.5, 4.5, 2.1, 1), oma = c(0,0,2,0))
     plot_types <- c("energy", "mean", "variance", "halfspace_depth")
+    current_ylab <- if(plot_density) "Density" else ylab
     for (k_idx in 1:length(plot_types)) {
       k <- plot_types[k_idx]
       current_ranks <- rank_lists[[k]]
-      if(all(is.na(current_ranks))) {
-          plot(1, type="n", xlab=xlab, ylab=ylab, main=main_titles[k_idx], 
-               xlim=c(0.5, M+1.5), ylim=c(0, N))
-          text(mean(par("usr")[1:2]), mean(par("usr")[3:4]),
-            "All rank data are NA", cex=1.2)
-          box(); abline(h = N / nbins, col = "red", lty = 2, lwd=1.5); next
+      # Determine reference line height and y-limits based on count or density
+      if (plot_density) {
+        reference_line_h <- 1 / (M + 1) 
+      } else {
+        reference_line_h <- N / nbins
       }
-      h <- hist(current_ranks, breaks = bin_edges, plot = FALSE)
-      hcounts <- h$counts
-      barplot(hcounts, names.arg = bar_names_to_use, main = main_titles[k_idx], 
-              xlab = xlab, ylab = ylab, col = "#1E90FFB3", border = "white", 
-              ylim = c(0, max(N/nbins*1.5, max(hcounts, na.rm=TRUE)*1.1,
-              na.rm=TRUE)+1), cex.names = 0.8, cex.axis = 0.8, cex.lab = 0.9,
-              cex.main = 1)
-      abline(h = N / nbins, col = "red", lty = 2, lwd=1.5); box()
+      if(all(is.na(current_ranks))) {
+          plot(1, type="n", xlab=xlab, ylab=current_ylab,
+               main=main_titles[k_idx],  xlim=c(0.5, M+1.5), 
+               ylim=if(plot_density) c(0,
+               reference_line_h * 2 + 0.01) else c(0, N))
+          text(mean(par("usr")[1:2]), mean(par("usr")[3:4]),
+          "All rank data are NA", cex=1.2)
+          box()
+          abline(h = reference_line_h, col = "red", lty = 2, lwd=1.5); next
+      }
+      # Calculate histogram data: either counts or densities
+      h <- hist(current_ranks, breaks = bin_edges, plot = FALSE,
+      probability = plot_density)
+      height_values <- if(plot_density) h$density else h$counts
+      # Adjust ylim dynamically
+      if (plot_density) {
+          ylim_val <- c(0, max(reference_line_h * 2,
+          max(height_values, na.rm = TRUE) * 1.1, na.rm = TRUE) + 0.01)
+      } else {
+          ylim_val <- c(0, max(reference_line_h * 1.5,
+          max(height_values, na.rm = TRUE) * 1.1, na.rm = TRUE) + 1)
+      }
+      if(ylim_val[2] <= ylim_val[1]) ylim_val[2] <- ylim_val[1] + 1
+      barplot(height_values, names.arg = bar_names_to_use,
+              main = main_titles[k_idx], xlab = xlab, ylab = current_ylab,
+              col = "#1E90FFB3", border = "white",  ylim = ylim_val,
+              cex.names = 0.8, cex.axis = 0.8, cex.lab = 0.9, cex.main = 1)
+      abline(h = reference_line_h, col = "red", lty = 2, lwd=1.5); box()
     }
     par(op)
   }
   invisible(list(
     ranks = rank_lists,
     bin_edges = bin_edges,
-    bin_centers = numeric_bin_centers
+    bin_centers = numeric_bin_centers,
+    is_density_plot = plot_density
   ))
 }
 
 dev.next()
 mrh_valid <- multivar_rank_histograms_4panel(y_valid, rsamples_ens,
-               nbins = n_ens / 2)
+               nbins = n_ens+1)
 
 dev.off()
 
