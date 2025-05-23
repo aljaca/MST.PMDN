@@ -35,7 +35,7 @@ Williams, P. M. (1996). Using neural networks to model conditional multivariate 
 
 ---
 
-# Deep MST-PMDN Implementation
+# Deep MST-PMDN Architecture
 
 <img src="deep-MST-PMDN.png" alt="Deep MST-PMDN" width="360"/>
 
