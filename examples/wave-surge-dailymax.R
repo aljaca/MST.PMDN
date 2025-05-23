@@ -301,7 +301,7 @@ fit <- train_mst_pmdn(
   checkpoint_path = "wave-surge-checkpoint.pt",
   resume_from_checkpoint = FALSE,
   model = NULL,
-  early_stopping_patience = 20,
+  early_stopping_patience = 50,
   validation_split = 0,
   custom_split = custom_split,
   scheduler_step = 50,
