@@ -262,7 +262,7 @@ drop_hidden <- 0.5
 modelname <- "VVI"
 skewtname <- "FN"
 constant_attr <- ""
-n_mixtures <- 6
+n_mixtures <- 7
 fixed_nu <- c(rep(50, n_mixtures - 1), NA)
 
 out.pt <- paste0("wave-surge-dailymax.", modelname, skewtname,
