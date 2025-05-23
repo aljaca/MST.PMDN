@@ -1,7 +1,7 @@
 # Deep Multivariate Skew t-Parsimonious Mixture Density Network (MST-PMDN) 
 ### Alex J. Cannon <alex.cannon@ec.gc.ca> 
 
-[torch for R](https://torch.mlverse.org/) implementation of a probabilistic regression model based on a multivariate skew t-Parsimonious Mixture Density Network (MST-PMDN). Parameters of a mixture of multivariate skew t distributions that describe a multivariate output are inferred by training a deep learning model with two multi-modal input branches, one for tabular inputs and the other for (optional) image inputs. The two branches are provided as user-defined modules. Outputs from each are concatenated and passed through a dense fusion network, which then leads to the MST-PMDN head. Note: input and output variables should be scaled appropriately prior to model fitting. In the MST-PMDN head, scale matrices are represented using a volume (L)-shape (A)-orientation (D) (LAD) eigenvalue decomposition parameterization like model-based clustering. LAD attributes, the degrees of freedom parameter (nu), and the alpha parameter (skewness, s) can be forced to be Variable or Equal between mixture components (plus Identity for A and D). Values of nu and alpha can also be constrained to emulate a multivariate normal (N) distribution. In the case of nu, users can specify fixed (F) values by passing an optional fixed_nu vector. If an element of fixed_nu is set to NA, then the value of nu for this component is learned by the network. Different model types are specified by setting the argument constraint = "EIINN", "VEVFV", etc. Values of the means (m), mixing coefficients (x), LAD attributes, nu (n), and alpha (skewness, s) for the mixtures can be made to be independent of inputs by specifying any combination of constant_attr <- "m", "mx", ..., "LADmxns".
+[torch for R](https://torch.mlverse.org/) implementation of a distributional regression model based on a multivariate skew t-Parsimonious Mixture Density Network (MST-PMDN). Parameters of a mixture of multivariate skew t distributions that describe a multivariate output are inferred by training a deep learning model with two multi-modal input branches, one for tabular inputs and the other for (optional) image inputs. The two branches are provided as user-defined modules. Outputs from each are concatenated and passed through a dense fusion network, which then leads to the MST-PMDN head. Note: input and output variables should be scaled appropriately prior to model fitting. In the MST-PMDN head, scale matrices are represented using a volume (L)-shape (A)-orientation (D) (LAD) eigenvalue decomposition parameterization like model-based clustering. LAD attributes, the degrees of freedom parameter (nu), and the alpha parameter (skewness, s) can be forced to be Variable or Equal between mixture components (plus Identity for A and D). Values of nu and alpha can also be constrained to emulate a multivariate normal (N) distribution. In the case of nu, users can specify fixed (F) values by passing an optional fixed_nu vector. If an element of fixed_nu is set to NA, then the value of nu for this component is learned by the network. Different model types are specified by setting the argument constraint = "EIINN", "VEVFV", etc. Values of the means (m), mixing coefficients (x), LAD attributes, nu (n), and alpha (skewness, s) for the mixtures can be made to be independent of inputs by specifying any combination of constant_attr <- "m", "mx", ..., "LADmxns".
 
 ## References 
 
@@ -24,9 +24,11 @@ Fraley, C., & Raftery, A. E. (2002). Model-based clustering, discriminant analys
 Fraley, C., & Raftery, A. E. (1998). How many clusters? Which clustering method? Answers via model-based cluster analysis. The Computer Journal, 41(8), 578-588. 
  
 Lee, S., & McLachlan, G. J. (2014). Finite mixtures of multivariate skew t-distributions: some recent and new results. Statistics and Computing, 24, 181-202. 
- 
+
 Kingman, D. P., & Ba, J. (2015). Adam: a method for stochastic optimization. Proceedings of the 3rd International Conference on Learning Representations, ICLR 2015, San Diego, CA, USA. arXiv:1412.6980 
- 
+
+Klein, N. (2024). Distributional regression for data analysis. Annual Review of Statistics and Its Application, 11:321-346.
+
 Peel, D., & McLachlan, G.J. (2000). Robust mixture modelling using the t distribution. Statistics and Computing 10, 339–348. 
 
 Srucca, L., Fop, M., Murphy, T. B., & Raftery, A. E. (2016). mclust 5: Clustering, classification and density estimation using Gaussian finite mixture models. The R Journal, 8(1), 289-317. 
