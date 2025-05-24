@@ -9,7 +9,11 @@ print(seed)
 
 library(mclust)
 source("../MST-PMDN.R")
-torch_set_num_threads(1)
+
+device <- "cpu"
+num_threads <- 1
+torch_set_num_threads(num_threads)
+torch_set_num_interop_threads(num_threads)
 
 ##
 # Tabular data (lag-1 wave-surge and first two harmonics of the annual cycle
@@ -308,7 +312,8 @@ fit <- train_mst_pmdn(
   scheduler_gamma = 0.5,
   image_inputs = x_image,
   image_module = image_mod,
-  tabular_module = tabular_mod
+  tabular_module = tabular_mod,
+  device = device
 )
 
 t2 <- Sys.time()
@@ -317,7 +322,7 @@ print(t2 - t1)
 ##
 # Prediction using both tabular and image inputs.
 
-pred <- predict_mst_pmdn(fit$model, x, x_image, device = "cpu")
+pred <- predict_mst_pmdn(fit$model, x, x_image, device = device)
 samples <- as.matrix(sample_mst_pmdn(pred, num_samples = 1)$samples[1, , ])
 samples[samples[, 1] < min(y[, 1]), 1] <- min(y[, 1])
 cat("mu:\n")
@@ -362,7 +367,7 @@ for(iii in seq(n_ens)){
       x_image_valid_i <- x_image_valid[i , , , , drop=FALSE]
       rsamples_i <- sample_mst_pmdn(predict_mst_pmdn(fit$model,
                                     x_valid_i, x_image_valid_i,
-                                    device = "cpu"),
+                                    device = device),
                                     num_samples = 1)$samples[1, , ]
       rsamples_iii[i, ] <- as.matrix(rsamples_i)
     }
