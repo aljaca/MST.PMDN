@@ -228,14 +228,20 @@ t_cdf_slow <- function(z, nu) {
 t_cdf_fast <- function(z, nu) {
   # Student-t CDF (fast scaled normal approximation for large values of nu)
   nu_f <- nu$to(dtype = z$dtype)
-  s    <- torch_sqrt(nu_f / (nu_f - torch_tensor(2, dtype = z$dtype,
-                                                 device = z$device)))
-  distr_normal(0, 1)$cdf(s * z)
+  current_device <- z$device # Get the device from z
+  two_tensor <- torch_tensor(2, dtype = z$dtype, device = current_device)
+  s  <- torch_sqrt(nu_f / (nu_f - two_tensor))
+  loc_tensor <- torch_tensor(0, dtype = z$dtype, device = current_device)
+  scale_tensor <- torch_tensor(1, dtype = z$dtype, device = current_device)
+  distr_normal(loc_tensor, scale_tensor)$cdf(s * z)
 }
 
 t_cdf <- function(z, nu, nu_switch = 20) {
   # Switches between slow and fast Student-t CDF implementations when
   # nu >= nu_switch (swap t_cdf_slow for t_cdf_int if working on GPU)
+  # 1) torch_where(nu >= nu_switch, t_cdf_fast(z, nu), t_cdf_slow(z, nu))
+  # 2) torch_where(nu >= nu_switch, t_cdf_fast(z, nu), t_cdf_int(z, nu))
+  # 3) t_cdf_fast(z, nu)
   torch_where(nu >= nu_switch, t_cdf_fast(z, nu), t_cdf_slow(z, nu))
 }
 
@@ -845,8 +851,9 @@ loss_mst_pmdn <- function(output, target, nu_switch = 20) {
   # alpha^T w
   alpha_dot_w <- (alpha * w)$sum(dim = 3) # [B, M]
   # Univariate standard t-CDF with df = nu + d
-  log_skew_factor <- torch_log(2.0) + log_pt(alpha_dot_w, nu + d, nu_switch)
   # Final log-density of skew-t component
+  log_skew_factor <- torch_log(torch_tensor(2.0, device = dev)) +
+                     log_pt(alpha_dot_w, nu + d, nu_switch)
   log_skewt <- log_pdf_t + log_skew_factor # [B, M]
   # Mixture weighting and log-sum-exp for total log-likelihood
   # log P(y|x) = log sum_k [ pi_k * SkewT(y | mu_k, Sigma_k, alpha_k, nu_k) ]
