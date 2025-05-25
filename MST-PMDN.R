@@ -33,17 +33,22 @@ sample_gamma <- function(shape, scale = 1, device = "cpu") {
 
 build_orthogonal_matrix <- function(params, dim) {
   # Helper for building an orthogonal orientation matrix
+  dev <- params$device
   batch_size <- params$size(1)
-  X <- torch_zeros(batch_size, dim, dim)
-  indices <- torch_triu_indices(dim, dim, offset = 1)
-  row_indices <- indices[1, ]$add(1)$to(dtype = torch_long())
-  col_indices <- indices[2, ]$add(1)$to(dtype = torch_long())
-  batch_indices <- torch_arange(1, batch_size)$unsqueeze(2)$expand(
-    c(batch_size, indices$size(2)))$to(dtype = torch_long())
-  row_indices <- row_indices$unsqueeze(1)$expand(c(batch_size,
-                                                   -1))$to(dtype = torch_long())
-  col_indices <- col_indices$unsqueeze(1)$expand(c(batch_size,
-                                                   -1))$to(dtype = torch_long())
+  X <- torch_zeros(batch_size, dim, dim, device = dev)
+  indices_orig <- torch_triu_indices(dim, dim, offset = 1,
+                                     dtype = torch_long(), device = dev)
+  row_indices_1d <- indices_orig[1, ]$add(1)$to(dtype = torch_long())
+  col_indices_1d <- indices_orig[2, ]$add(1)$to(dtype = torch_long())
+  batch_vals <- torch_arange(1, batch_size, device = dev, dtype = torch_long())
+  # Expand batch, row, and column indices for broadcasting
+  num_triu_elements <- indices_orig$size(2)
+  batch_indices <- batch_vals$unsqueeze(2)$expand(c(batch_size,
+                     num_triu_elements))
+  row_indices <- row_indices_1d$unsqueeze(1)$expand(c(batch_size,
+                   num_triu_elements))
+  col_indices <- col_indices_1d$unsqueeze(1)$expand(c(batch_size,
+                   num_triu_elements))
   X$index_put_(list(batch_indices, row_indices, col_indices), params)
   X <- X - X$transpose(2, 3)
   Q <- torch_matrix_exp(X)
@@ -57,12 +62,12 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
   km    <- kmeans(as.matrix(outputs_train), centers = n_mixtures, nstart = 20)
   cent  <- torch_tensor(km$centers, dtype = torch_float(), device = device)
   if (grepl("m", constant_attr)) {
-    ## mu is a parameter
+    # mu is a parameter
     with_no_grad({
       model$mu$copy_(cent)
     })
   } else {
-    ## mu comes from bias of fc_mu
+    # mu comes from bias of fc_mu
     with_no_grad({
       model$fc_mu$bias$copy_(cent$reshape(c(-1)))
       model$fc_mu$g$zero_()
