@@ -10,7 +10,7 @@ print(seed)
 library(mclust)
 source("../MST-PMDN.R")
 
-device <- "cpu"
+device <- ifelse(cuda_is_available(), "cuda", "cpu")
 num_threads <- 1
 torch_set_num_threads(num_threads)
 torch_set_num_interop_threads(num_threads)
@@ -77,7 +77,7 @@ x_image <- x_image[-1, , , ]
 
 ##
 # Number of mixtures and constraints informed by model-based clustering
-# (mclust) on independent samples
+# (mclust) on every 7th day (approximately independent events)
 
 mc <- Mclust(y[which(custom_split)[c(TRUE, rep(FALSE, 6))], ], G = 1:10)
 print(mc$BIC)
@@ -268,6 +268,8 @@ skewtname <- "FN"
 constant_attr <- ""
 n_mixtures <- 7
 fixed_nu <- c(rep(50, n_mixtures - 1), NA)
+
+cat(modelname, skewtname, constant_attr, n_mixtures, "\n")
 
 out.pt <- paste0("wave-surge-dailymax.", modelname, skewtname,
                  constant_attr, n_mixtures, ".pt")
