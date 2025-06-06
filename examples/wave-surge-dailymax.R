@@ -266,7 +266,7 @@ drop_hidden <- 0.5
 modelname <- "VVI"
 skewtname <- "FN"
 constant_attr <- ""
-n_mixtures <- 7
+n_mixtures <- 2
 fixed_nu <- c(rep(50, n_mixtures - 1), NA)
 
 cat(modelname, skewtname, constant_attr, n_mixtures, "\n")
