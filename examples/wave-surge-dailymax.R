@@ -8,7 +8,7 @@ set.seed(seed)
 print(seed)
 
 library(mclust)
-source("../MST-PMDN.R")
+source("../R/MST-PMDN.R")
 
 device <- ifelse(cuda_is_available(), "cuda", "cpu")
 num_threads <- 1
