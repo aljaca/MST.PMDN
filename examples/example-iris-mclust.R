@@ -9,7 +9,7 @@ library(GGally)
 library(ellipse)
 library(mclust)
 library(torch)
-source("../MST-PMDN.R")
+source("../R/MST-PMDN.R")
 torch_set_num_threads(1)
 
 data(iris)
