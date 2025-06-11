@@ -1,7 +1,6 @@
 \name{t_cdf_int}
 \alias{t_cdf_int}
 \title{Numerical integration–based Student t CDF}
-\docType{function}
 \usage{
 t_cdf_int(z, nu)
 }
