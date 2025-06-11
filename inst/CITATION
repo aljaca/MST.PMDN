@@ -1,1 +1,10 @@
+citHeader("To cite the 'MST.PMDN' package in publications, use:")
 
+citEntry(
+  entry   = "Manual",
+  title   = "MST.PMDN: Deep Multivariate Skew t-Parsimonious Mixture Density Network",
+  author  = "Alex J. Cannon [aut, cre]",
+  year    = "2025",
+  note    = "R package version 0.1.0",
+  url     = "https://github.com/aljaca/MST.PMDN"
+)
