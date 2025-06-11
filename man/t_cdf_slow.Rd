@@ -17,9 +17,3 @@ more important than speed.
 \value{
 A \code{\link[torch]{torch_tensor}} of CDF values corresponding to \code{z}.
 }
-\examples{
-library(torch)
-z <- torch_tensor(c(-2, -0.5, 0.5, 2))
-nu <- 10
-t_cdf_slow(z, nu)
-}
