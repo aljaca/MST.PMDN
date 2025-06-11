@@ -1,7 +1,6 @@
 \name{loss_mst_pmdn}
 \alias{loss_mst_pmdn}
 \title{Negative Log-Likelihood Loss for MST-PMDN}
-\docType{function}
 
 \usage{
 loss_mst_pmdn(output, target, nu_switch = 20)
