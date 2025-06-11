@@ -1,1 +1,17 @@
-
+Package: MST.PMDN
+Type: Package
+Title: Deep Multivariate Skew t-Parsimonious Mixture Density Network
+Version: 0.1.0
+Authors@R: person(given="Alex J.", family="Cannon",
+    email="alex.cannon@canada.ca", role=c("aut", "cre"),
+    comment=c(ORCID="0000-0002-8025-3790"))
+Maintainer: Alex J. Cannon <alex.cannon@canada.ca>
+Description: Implements a distributional deep learning regression framework based on a mixture of multivariate skew-t distributions.
+    Provides user‐facing functions to define, train, predict, and sample from deep MST-PMDN models built with torch for R.
+License: GPL (>= 2)
+Encoding: UTF-8
+Imports:
+    torch,
+    stats
+LazyData: true
+NeedsCompilation: no
