@@ -12,9 +12,8 @@ t_cdf(z, nu, nu_switch = 20)
 }
 \description{
 Conditionally dispatches to \code{\link{t_cdf_fast}} or \code{\link{t_cdf_slow}}, providing a single API
-for computing the Student t cumulative distribution in a manner compatible with the torch
-computation graph. Note: will be deprecated once \code{torch.distributions.studentT} has been ported to torch
-for R.
+for computing the Student t cumulative distribution in a manner compatible with torch computation graphs.
+Note: will be deprecated once \code{torch.distributions.studentT} has been ported to torch for R.
 }
 \value{
 A \code{\link[torch]{torch_tensor}} of CDF values.
