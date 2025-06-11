@@ -54,6 +54,7 @@ Key user-facing functions include:
   \item \code{\link{sample_mst_pmdn}}: draw samples as \code{\link[torch]{torch_tensor}} objects.
   \item \code{\link{sample_mst_pmdn_df}}: draw samples returned as an R \code{\link{data.frame}}.
 }
+}
 \references{
 Ambrogioni, L., Güçlü, U., van Gerven, M. A., & Maris, E. (2017). The kernel mixture network: A nonparametric method for conditional density estimation of continuous random variables. arXiv:1705.07111. 
  
@@ -84,6 +85,5 @@ Peel, D., & McLachlan, G.J. (2000). Robust mixture modelling using the t distrib
 Srucca, L., Fop, M., Murphy, T. B., & Raftery, A. E. (2016). mclust 5: Clustering, classification and density estimation using Gaussian finite mixture models. The R Journal, 8(1), 289-317. 
  
 Williams, P. M. (1996). Using neural networks to model conditional multivariate densities. Neural Computation, 8(4), 843-854.
-}
 }
 \keyword{package}
