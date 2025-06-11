@@ -5,7 +5,7 @@ citEntry(
   title       = "MST.PMDN: Deep Multivariate Skew t-Parsimonious Mixture Density Network",
   author      = person("Alex", "Cannon", role = c("aut", "cre")),
   year        = "2025",
-  note        = "R package version 0.10",
+  note        = "R package version 0.1.0",
   url         = "https://github.com/aljaca/MST.PMDN",
   textVersion = "Cannon, A. J. (2025). MST.PMDN: Deep Multivariate Skew t-Parsimonious Mixture Density Network. R package version 0.1.0. "https://github.com/aljaca/MST.PMDN""
 )
