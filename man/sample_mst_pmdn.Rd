@@ -1,7 +1,6 @@
 \name{sample_mst_pmdn}
 \alias{sample_mst_pmdn}
 \title{Draw raw tensor samples from an MST-PMDN predictive mixture}
-\docType{function}
 
 \usage{
 sample_mst_pmdn(mdn_output, num_samples = 1, device = "cpu")
