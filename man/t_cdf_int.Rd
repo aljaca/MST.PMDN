@@ -11,7 +11,6 @@ t_cdf_int(z, nu)
 }
 \description{
 Computes the Student t CDF by directly numerically integrating the PDF.
-This is the most accurate but also the slowest method.
 }
 \value{
 A \code{\link[torch]{torch_tensor}} containing the integrated CDF values.
