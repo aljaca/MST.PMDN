@@ -7,9 +7,9 @@ sample_mst_pmdn_df(mdn_output, num_samples = 1, device = "cpu")
 }
 
 \arguments{
-  \item{\code{mdn_output}}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} or a forward pass of an \code{mst_pmdn_model}, containing at minimum the following named \code{\link[torch]{torch_tensor}} elements: \code{pi}, \code{mu}, \code{scale_chol}, \code{nu}, and \code{alpha}.}
-  \item{\code{num_samples}}{Integer; number of random draws to generate per input case. Defaults to \code{1}.}
-  \item{\code{device}}{Character; the torch device on which sampling is performed (e.g.\ \code{"cpu"} or \code{"cuda"}). Defaults to \code{"cpu"}.}
+  \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} or a forward pass of an \code{mst_pmdn_model}, containing at minimum the following named \code{\link[torch]{torch_tensor}} elements: \code{pi}, \code{mu}, \code{scale_chol}, \code{nu}, and \code{alpha}.}
+  \item{num_samples}{Integer; number of random draws to generate per input case. Defaults to \code{1}.}
+  \item{device}{Character; the torch device on which sampling is performed (e.g.\ \code{"cpu"} or \code{"cuda"}). Defaults to \code{"cpu"}.}
 }
 
 \description{
