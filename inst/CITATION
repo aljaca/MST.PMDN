@@ -3,7 +3,7 @@ citHeader("To cite the 'MST.PMDN' package in publications, use:")
 citEntry(
   entry       = "Manual",
   title       = "MST.PMDN: Deep Multivariate Skew t-Parsimonious Mixture Density Network",
-  author      = person("Alex J.", "Cannon", role = c("aut", "cre"), comment = "ORCID: https://orcid.org/0000-0002-8025-3790"),
+  author      = person("Alex J.", "Cannon", role = c("aut", "cre"), comment = c(ORCID="0000-0002-8025-3790")),
   year        = "2025",
   note        = "R package version 0.1.0",
   url         = "https://github.com/aljaca/MST.PMDN",
