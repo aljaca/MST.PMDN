@@ -26,22 +26,22 @@ define_mst_pmdn(
 )
 }
 \arguments{
-  \item{\code{input_dim}}{Integer. Number of features in the raw tabular input (used if \code{tabular_module} is \code{NULL}).}
-  \item{\code{output_dim}}{Integer. Dimension \code{d} of the multivariate response.}
-  \item{\code{hidden_dim}}{Integer vector. Sizes of hidden layers in the dense fusion network.}
-  \item{\code{n_mixtures}}{Integer. Number of skew t mixture components \code{M}.}
-  \item{\code{constraint}}{Character. Code for volume–shape–orientation, degrees of freedom \code{nu}, and skew constraints (e.g.\ “\code{VVVFN}”).}
-  \item{\code{constant_attr}}{Character. Flags for parameters held constant (e.g.\ “\code{m}” for means, “\code{s}” for skew, etc.).}
-  \item{\code{activation}}{Function. \pkg{torch} activation for hidden layers (default \code{nn_relu}).}
-  \item{\code{drop_hidden}}{Numeric between 0 and 1. Dropout probability after each hidden layer.}
-  \item{\code{image_module}}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
-  \item{\code{tabular_module}}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
-  \item{\code{fixed_nu}}{Numeric vector of length \code{M}, or \code{NULL}. If non-\code{NULL}, fixes degrees of freedom for each component.}
-  \item{\code{range_nu}}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}.}
-  \item{\code{max_alpha}}{Numeric. Absolute bound for skewness parameter.}
-  \item{\code{min_vol_shape}}{Numeric. Minimum allowed value for volume (L) and shape (A) diagonal parameters.}
-  \item{\code{min_mix_weight}}{Numeric. Floor for each mixture weight to avoid zero probabilities.}
-  \item{\code{jitter}}{Numeric. Small ridge added to covariance diagonals for numerical stability.}
+  \item{input_dim}{Integer. Number of features in the raw tabular input (used if \code{tabular_module} is \code{NULL}).}
+  \item{output_dim}{Integer. Dimension \code{d} of the multivariate response.}
+  \item{hidden_dim}{Integer vector. Sizes of hidden layers in the dense fusion network.}
+  \item{n_mixtures}{Integer. Number of skew t mixture components \code{M}.}
+  \item{constraint}{Character. Code for volume–shape–orientation, degrees of freedom \code{nu}, and skew constraints (e.g.\ “\code{VVVFN}”).}
+  \item{constant_attr}{Character. Flags for parameters held constant (e.g.\ “\code{m}” for means, “\code{s}” for skew, etc.).}
+  \item{activation}{Function. \pkg{torch} activation for hidden layers (default \code{nn_relu}).}
+  \item{drop_hidden}{Numeric between 0 and 1. Dropout probability after each hidden layer.}
+  \item{image_module}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
+  \item{tabular_module}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
+  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. If non-\code{NULL}, fixes degrees of freedom for each component.}
+  \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}.}
+  \item{max_alpha}{Numeric. Absolute bound for skewness parameter.}
+  \item{min_vol_shape}{Numeric. Minimum allowed value for volume (L) and shape (A) diagonal parameters.}
+  \item{min_mix_weight}{Numeric. Floor for each mixture weight to avoid zero probabilities.}
+  \item{jitter}{Numeric. Small ridge added to covariance diagonals for numerical stability.}
 }
 \value{
 An untrained \code{mst_pmdn_model}, which is a \pkg{torch} \code{nn_module} encapsulating the MST‐PMDN head.  Use \code{\link{train_mst_pmdn}} to fit it to data.
