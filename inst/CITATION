@@ -1,7 +1,7 @@
 citHeader("To cite the 'MST.PMDN' package in publications, use:")
 
 citEntry(
-  bibtype     = "Manual",
+  entry       = "Manual",
   title       = "MST.PMDN: Deep Multivariate Skew t-Parsimonious Mixture Density Network",
   author      = person("Alex", "Cannon", role = c("aut", "cre")),
   year        = "2025",
