@@ -11,8 +11,7 @@ t_cdf_slow(z, nu)
 }
 \description{
 Computes a more accurate but computationally slower approximation to the Student t
-CDF by scaling and using the error function under the hood. Useful when precision is
-more important than speed.
+CDF using \code{pt} and finite differences for the gradient.
 }
 \value{
 A \code{\link[torch]{torch_tensor}} of CDF values corresponding to \code{z}.
