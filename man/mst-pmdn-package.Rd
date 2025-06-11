@@ -23,7 +23,7 @@ case of n, users can specify fixed (F) values for nu by passing an optional
 then the value of nu for this component is learned by the network. Different 
 model types are specified by setting the argument \code{constraint = "EIINN"}, 
 \code{"VEVFV"}, etc. where each letter position in the argument corresponds, 
-respectively, to each of the LADns attributes. Furthermore, values of the mu (or 
+respectively, to each of the LADns attributes. Furthermore, values of mu (or 
 means) (m), pi (or mixing coefficients) (x), volume-shape-orientation attributes 
 (LAD), nu (or degrees of freedom) (n), and alpha (or skewness) (s) for the 
 mixtures can be made to be independent of inputs by specifying any combination 
