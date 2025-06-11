@@ -14,5 +14,4 @@ Imports:
     torch,
     coro,
     stats
-LazyData: true
 NeedsCompilation: no
