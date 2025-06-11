@@ -16,9 +16,4 @@ of the Student t distribution, suitable for use in \pkg{torch} computation graph
 \value{
 A \code{\link[torch]{torch_tensor}} of the same shape as \code{z}, containing CDF values.
 }
-\examples{
-library(torch)
-z <- torch_tensor(c(-1, 0, 1))
-nu <- 5
-t_cdf_fast(z, nu)
-}
+
