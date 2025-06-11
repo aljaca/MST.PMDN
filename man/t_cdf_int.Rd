@@ -16,9 +16,3 @@ This is the most accurate but also the slowest method.
 \value{
 A \code{\link[torch]{torch_tensor}} containing the integrated CDF values.
 }
-\examples{
-library(torch)
-z <- torch_tensor(seq(-3, 3, by = 1))
-nu <- 4
-t_cdf_int(z, nu)
-}
