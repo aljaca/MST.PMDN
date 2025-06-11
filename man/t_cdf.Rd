@@ -1,7 +1,6 @@
 \name{t_cdf}
 \alias{t_cdf}
 \title{Unified interface to Student t CDF}
-\docType{function}
 \usage{
 t_cdf(z, nu, nu_switch = 20)
 }
