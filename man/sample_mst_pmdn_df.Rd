@@ -1,7 +1,6 @@
 \name{sample_mst_pmdn_df}
 \alias{sample_mst_pmdn_df}
 \title{Draw MST-PMDN predictive samples as a data frame}
-\docType{function}
 
 \usage{
 sample_mst_pmdn_df(mdn_output, num_samples = 1, device = "cpu")
