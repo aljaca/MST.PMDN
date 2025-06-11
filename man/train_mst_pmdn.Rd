@@ -1,4 +1,3 @@
-
 \name{train_mst_pmdn}
 \alias{train_mst_pmdn}
 \title{Train a Deep Multivariate Skew t Parsimonious Mixture Density Network}
