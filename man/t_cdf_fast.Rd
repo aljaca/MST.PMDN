@@ -1,7 +1,6 @@
 \name{t_cdf_fast}
 \alias{t_cdf_fast}
 \title{Fast approximation of the Student t CDF}
-\docType{function}
 \usage{
 t_cdf_fast(z, nu)
 }
