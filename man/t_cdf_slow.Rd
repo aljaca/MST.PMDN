@@ -1,7 +1,6 @@
 \name{t_cdf_slow}
 \alias{t_cdf_slow}
 \title{Accurate but slower Student t CDF approximation}
-\docType{function}
 \usage{
 t_cdf_slow(z, nu)
 }
