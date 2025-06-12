@@ -3,7 +3,7 @@ Type: Package
 Title: Deep Multivariate Skew t-Parsimonious Mixture Density Network
 Version: 0.1.0
 Authors@R: person(given="Alex J.", family="Cannon",
-    email="alex.cannon@canada.ca", role=c("aut", "cre"),
+    email="alex.cannon@ec.gc.ca", role=c("aut", "cre"),
     comment=c(ORCID="0000-0002-8025-3790"))
 Maintainer: Alex J. Cannon <alex.cannon@ec.gc.ca>
 Author: Alex J. Cannon [aut, cre] (<https://orcid.org/0000-0002-8025-3790>)
