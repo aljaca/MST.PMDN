@@ -191,6 +191,9 @@ fixed_nu <- c(50, NA)   # nu = 50 for 1st component; variable for 2nd
 constant_attr <- ""     # All parameters are free to vary with covariates
 wd_tabular <- 0         # Weight decay for tabular module
 wd_image <- 0.01        # Weight decay for image module
+epochs <- 20            # Number of training epochs
+lr <- 1e-3              # Initial Adam learning rate
+batch_size <- 32        # Batch size
 
 # Combine the tabular module, image module, and fusion network
 model <- define_mst_pmdn(
@@ -212,9 +215,9 @@ fit <- train_mst_pmdn(
   constraint = constraint,
   fixed_nu = fixed_nu,
   constant_attr = constant_attr,
-  epochs = 20,
-  lr = 1e-3,
-  batch_size = 32,
+  epochs = epochs,
+  lr = lr,
+  batch_size = batch_size,
   wd_tabular = wd_tabular,
   wd_image = wd_image,
   image_inputs = x_image,
