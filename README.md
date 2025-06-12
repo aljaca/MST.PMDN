@@ -214,7 +214,7 @@ fit <- train_mst_pmdn(
   image_inputs = x_image,
   image_module = image_mod,
   tabular_module = tabular_mod,
-  checkpoint_path = NULL,
+  checkpoint_path = "wave_surge_checkpoint.pt",
   device = device
 )
 
