@@ -102,13 +102,6 @@ tabular_module <- nn_module(
     x
   }
 )
-# Tabular module (32 → 16 hidden, 16-dim output, 50% dropout)
-tabular_mod <- tabular_module(
-  input_dim = ncol(x),
-  hidden_dims = c(32, 16),
-  output_dim = 16,
-  dropout_rate = 0.5
-)
 
 # The ImageModule accepts a 2×32×32 image, applies a 3×3 conv (2→16)
 # with BN, ReLU  and 2×2 max-pool (→16×16), repeats with a 16→32 conv
@@ -172,6 +165,14 @@ image_module <- nn_module(
   }
 )
 
+# Instantiate the tabular and image modules
+tabular_mod <- tabular_module(
+  input_dim = ncol(x),
+  hidden_dims = c(32, 16),
+  output_dim = 16,
+  dropout_rate = 0.5
+)
+
 image_mod <- image_module(
   in_channels = dim(x_image)[2],
   img_size = dim(x_image)[3],
@@ -181,11 +182,14 @@ image_mod <- image_module(
   output_dim = 32
 )
 
-# Fusion network and MST-PMDN head 
+# Define the fusion network and MST-PMDN head 
 hidden_dim <- c(64, 32)
 n_mixtures <- 2
+constraint <- "VVIFN"
+fixed_nu <- c(50, NA)
+constant_attr <- ""
 
-# Combine the tabular module, image module, and fusion networks
+# Combine the tabular module, image module, and fusion network
 model <- define_mst_pmdn(
   input_dim = ncol(x),
   output_dim = ncol(y),
@@ -201,12 +205,16 @@ fit <- train_mst_pmdn(
   outputs = y,
   hidden_dim = hidden_dim,
   n_mixtures = n_mixtures,
+  constraint = constraint,
+  fixed_nu = fixed_nu,
+  constant_attr = constant_attr,
   epochs = 10,
   lr = 1e-3,
   batch_size = 32,
   image_inputs = x_image,
   image_module = image_mod,
   tabular_module = tabular_mod,
+  checkpoint_path = NULL,
   device = device
 )
 
