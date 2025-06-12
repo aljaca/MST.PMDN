@@ -13,4 +13,5 @@ Encoding: UTF-8
 Depends: torch
 Imports: coro, stats
 LazyData: true
+LazyDataCompression: xz
 NeedsCompilation: no
