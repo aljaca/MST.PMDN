@@ -7,22 +7,22 @@ Following the approach used in model-based clustering (['mclust'](https://cran.r
 
 By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN can emulate the Gaussian finite mixture models implemented by ['mclust'](https://cran.r-project.org/package=mclust), i.e., for unconditional density estimation or model-based clustering:
 
-| mclust model | MST-PMDN `constraint =` | MST-PMDN `constant_attr =` |
-| -----------: | :---------------------- | :------------------------- |
-|          EII | `"EIINN"`               | `"LADmx"`                  |
-|          VII | `"VIINN"`               | `"LADmx"`                  |
-|          EEI | `"EEINN"`               | `"LADmx"`                  |
-|          VEI | `"VEINN"`               | `"LADmx"`                  |
-|          EVI | `"EVINN"`               | `"LADmx"`                  |
-|          VVI | `"VVINN"`               | `"LADmx"`                  |
-|          EEE | `"EEENN"`               | `"LADmx"`                  |
-|          EEV | `"EEVNN"`               | `"LADmx"`                  |
-|          EVE | `"EVENN"`               | `"LADmx"`                  |
-|          VEE | `"VEENN"`               | `"LADmx"`                  |
-|          VEV | `"VEVNN"`               | `"LADmx"`                  |
-|          VVE | `"VVENN"`               | `"LADmx"`                  |
-|          EVV | `"EVVNN"`               | `"LADmx"`                  |
-|          VVV | `"VVVNN"`               | `"LADmx"`                  |
+| mclust model | Description                                         | MST-PMDN `constraint =` | MST-PMDN `constant_attr =` |
+| -----------: | :-------------------------------------------------- | :---------------------- | :------------------------- |
+|          EII | spherical, equal volume                             | `"EIINN"`               | `"LADmx"`                  |
+|          VII | spherical, unequal volume                           | `"VIINN"`               | `"LADmx"`                  |
+|          EEI | diagonal, equal volume and shape                    | `"EEINN"`               | `"LADmx"`                  |
+|          VEI | diagonal, varying volume, equal shape               | `"VEINN"`               | `"LADmx"`                  |
+|          EVI | diagonal, equal volume, varying shape               | `"EVINN"`               | `"LADmx"`                  |
+|          VVI | diagonal, varying volume and shape                  | `"VVINN"`               | `"LADmx"`                  |
+|          EEE | ellipsoidal, equal volume, shape, and orientation   | `"EEENN"`               | `"LADmx"`                  |
+|          EEV | ellipsoidal, equal volume and equal shape           | `"EEVNN"`               | `"LADmx"`                  |
+|          EVE | ellipsoidal, equal volume and orientation           | `"EVENN"`               | `"LADmx"`                  |
+|          VEE | ellipsoidal, equal shape and orientation            | `"VEENN"`               | `"LADmx"`                  |
+|          VEV | ellipsoidal, equal shape                            | `"VEVNN"`               | `"LADmx"`                  |
+|          VVE | ellipsoidal, equal orientation                      | `"VVENN"`               | `"LADmx"`                  |
+|          EVV | ellipsoidal, equal volume                           | `"EVVNN"`               | `"LADmx"`                  |
+|          VVV | ellipsoidal, varying volume, shape, and orientation | `"VVVNN"`               | `"LADmx"`                  |
 
 Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the skewness parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) implements model-based multivariate skew t clustering.
 
