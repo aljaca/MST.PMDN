@@ -183,14 +183,14 @@ image_mod <- image_module(
 )
 
 # Define the fusion network, MST-PMDN head, and training setup 
-hidden_dim <- c(64, 32)
-drop_hidden <- 0.5
-n_mixtures <- 2
-constraint <- "VVIFN"
-fixed_nu <- c(50, NA)
-constant_attr <- ""
-wd_tabular <- 0
-wd_image <- 0.2
+hidden_dim <- c(64, 32) # Hidden nodes in fusion network
+drop_hidden <- 0.1      # Dropout for fusion network
+n_mixtures <- 2         # 2 components in the MST mixture model
+constraint <- "VVIFN"   # LAD = Variable-Variable-Identity; nu = one component fixed; skewness = normal 
+fixed_nu <- c(50, NA)   # nu = 50 for 1st component; variable for 2nd
+constant_attr <- ""     # All parameters are free to vary with covariates
+wd_tabular <- 0         # Weight decay for tabular module
+wd_image <- 0.01        # Weight decay for image module
 
 # Combine the tabular module, image module, and fusion network
 model <- define_mst_pmdn(
@@ -212,7 +212,7 @@ fit <- train_mst_pmdn(
   constraint = constraint,
   fixed_nu = fixed_nu,
   constant_attr = constant_attr,
-  epochs = 10,
+  epochs = 20,
   lr = 1e-3,
   batch_size = 32,
   wd_tabular = wd_tabular,
@@ -234,6 +234,7 @@ pred <- predict_mst_pmdn(
 print(names(pred))
 print(pred$pi[1:3, ])
 print(pred$mu[1:3, , ])
+print(pred$nu[1:3, ])
 
 # Draw samples 
 df_samples <- sample_mst_pmdn_df(
