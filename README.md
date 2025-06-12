@@ -41,7 +41,7 @@ device <- ifelse(cuda_is_available(), "cuda", "cpu")
 set.seed(1)
 torch_manual_seed(1)
 
-# Significant wave height and storm surge data and covariates
+# Significant wave height, storm surge, and covariate data from Roberts Bank
 x <- wave_surge$x              # x and x_image should be appropriateley scaled, e.g.,
 x_image <- wave_surge$x_image  # standardized to zero mean and unit standard deviation
 y <- wave_surge$y
@@ -205,7 +205,8 @@ image_mod <- image_module(
   output_dim = 32
 )
 
-# Define the fusion network, MST-PMDN head, and training setup 
+# Define the fusion network, MST-PMDN head, and training setup
+# Note: hyperparameters and number of epochs are not optimized
 hidden_dim <- c(64, 32) # Hidden nodes in fusion network
 drop_hidden <- 0.1      # Dropout for fusion network
 n_mixtures <- 2         # 2 components in the MST mixture model
