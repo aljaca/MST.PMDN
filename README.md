@@ -22,7 +22,7 @@ By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN ca
 |          EVV | `"EVVNN"`               | `"LADmx"`                  |
 |          VVV | `"VVVNN"`               | `"LADmx"`                  |
 
-Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the skewness parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) allows for implementation model-based multivariate skew t clustering.
+Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the skewness parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) implements model-based multivariate skew t clustering.
 
 With unconstrained or partially constrained `constant_attr`, the MST-PMDN framework allows parameters of the mixture of multivariate Gaussian, t, or skew t distributions to depend on tabular and image covariates via user-specified `torch` modules. This is intended to be the main use case for the `MST.PMDN` package. An example is provided below.
 
