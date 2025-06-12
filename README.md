@@ -9,6 +9,227 @@ A ['torch for R'](https://torch.mlverse.org/) implementation of a distributional
 install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.0.tar.gz")
 ```
 
+## Example
+
+```r
+library(MST.PMDN)
+
+device <- ifelse(cuda_is_available(), "cuda", "cpu")
+set.seed(1)
+torch_manual_seed(1)
+
+# Significant wave height and storm surge data and covariates
+x <- wave_surge$x
+x_image <- wave_surge$x_image
+y <- wave_surge$y
+
+# The TabularModule takes an input vector of length input_dim, runs it
+# through two dense layers (input_dim→32 and 32→16) each with
+# batch-norm (BN), ReLU and 50 %  dropout, then applies a final 16→16
+# linear layer plus ReLU to produce a 16-dimensional output.
+tabular_module <- nn_module(
+  "TabularModule",
+  initialize = function(
+    input_dim,
+    hidden_dims,
+    output_dim,
+    dropout_rate
+  ) {
+    # Number of hidden layers
+    if (is.null(hidden_dims) || length(hidden_dims) == 0) {
+      # No hidden layers
+      self$n_hidden_layers <- 0
+      self$hidden_dims <- c()
+    } else if (!is.vector(hidden_dims) && !is.list(hidden_dims)) {
+      # Single hidden size passed, wrap into vector
+      self$hidden_dims <- c(hidden_dims)
+      self$n_hidden_layers <- length(self$hidden_dims)
+    } else {
+      # Vector or list of hidden sizes
+      self$hidden_dims <- hidden_dims
+      self$n_hidden_layers <- length(self$hidden_dims)
+    }
+    # Store output size and dropout rate
+    self$output_dim <- output_dim
+    self$dropout_rate <- dropout_rate
+    # Module lists for linear layers, batch-norms, dropouts
+    self$layers <- nn_module_list()
+    self$bns <- nn_module_list()
+    if (self$dropout_rate > 0) {
+      self$dropouts <- nn_module_list()
+    }
+    # Build hidden layers
+    current_dim <- input_dim
+    if (self$n_hidden_layers > 0) {
+      for (i in seq_len(self$n_hidden_layers)) {
+        # Linear transform
+        self$layers$append(
+          nn_linear(current_dim, self$hidden_dims[[i]])
+        )
+        # Batch normalization on hidden size
+        self$bns$append(
+          nn_batch_norm1d(self$hidden_dims[[i]])
+        )
+        # Optional dropout after activation
+        if (self$dropout_rate > 0) {
+          self$dropouts$append(
+            nn_dropout(p = self$dropout_rate)
+          )
+        }
+        # Update input size for next layer
+        current_dim <- self$hidden_dims[[i]]
+      }
+    }
+    # Final linear layer: last hidden (or input) → output_dim
+    self$layers$append(
+      nn_linear(current_dim, output_dim)
+    )
+  },
+  forward = function(x) {
+    # Pass through each hidden layer
+    for (i in seq_len(self$n_hidden_layers)) {
+      x <- self$layers[[i]](x)  # linear
+      x <- self$bns[[i]](x)     # batch-norm
+      x <- nnf_relu(x)          # activation
+      # Apply dropout if configured
+      if (self$dropout_rate > 0 && !is.null(self$dropouts[[i]])) {
+        x <- self$dropouts[[i]](x)
+      }
+    }
+    # Final projection and activation
+    x <- self$layers[[length(self$layers)]](x)
+    x <- nnf_relu(x)
+    x
+  }
+)
+# Tabular module (32 → 16 hidden, 16-dim output, 50% dropout)
+tabular_mod <- tabular_module(
+  input_dim = ncol(x),
+  hidden_dims = c(32, 16),
+  output_dim = 16,
+  dropout_rate = 0.5
+)
+
+# The ImageModule accepts a 2×32×32 image, applies a 3×3 conv (2→16)
+# with BN, ReLU  and 2×2 max-pool (→16×16), repeats with a 16→32 conv
+# + BN, ReLU and max-pool (→8×8), flattens the 32×8×8 tensor to 2048
+# units, and then projects it to 32 features via a linear layer, BN,
+# and ReLU. Weight penalty (wd_image) is applied during training.
+image_module <- nn_module(
+  "ImageModule",
+  initialize = function(
+    in_channels,
+    img_size,
+    conv_channels,
+    kernel_size = 3,
+    pool_kernel = 2,
+    output_dim = 32
+  ) {
+    # Store output dim
+    self$output_dim <- output_dim
+    # Build conv stack
+    self$n_conv <- length(conv_channels)
+    self$convs <- nn_module_list()
+    self$bn_conv <- nn_module_list()
+    # Track spatial dim through conv+pool
+    spatial <- img_size
+    pad <- floor(kernel_size / 2)
+    for (i in seq_along(conv_channels)) {
+      in_ch <- if (i == 1) in_channels else conv_channels[i-1]
+      out_ch <- conv_channels[i]
+      # conv keeps spatial size (with padding)
+      self$convs$append(
+        nn_conv2d(
+          in_channels = in_ch,
+          out_channels = out_ch,
+          kernel_size = kernel_size,
+          padding = pad
+        )
+      )
+      self$bn_conv$append(nn_batch_norm2d(out_ch))
+      # Pooling halves spatial dims
+      spatial <- floor(spatial / pool_kernel)
+    }
+    # Store pooling layer and computed flatten_dim
+    self$pool <- nn_max_pool2d(kernel_size = pool_kernel)
+    self$flatten_dim <- tail(conv_channels, 1) * spatial * spatial
+    # Final head: linear( flatten_dim → output_dim ) + BN
+    self$fc    <- nn_linear(self$flatten_dim, output_dim)
+    self$bn_fc <- nn_batch_norm1d(output_dim)
+  },
+  forward = function(x) {
+    # conv → BN → ReLU → pool
+    for (i in seq_len(self$n_conv)) {
+      x <- self$convs[[i]](x)
+      x <- self$bn_conv[[i]](x)
+      x <- nnf_relu(x)
+      x <- self$pool(x)
+    }
+    # Flatten and head
+    x <- torch_flatten(x, start_dim = 2)
+    x <- self$fc(x)
+    nnf_relu(self$bn_fc(x))
+  }
+)
+
+image_mod <- image_module(
+  in_channels = dim(x_image)[2],
+  img_size = dim(x_image)[3],
+  conv_channels = c(16, 32),
+  kernel_size = 3,
+  pool_kernel = 2,
+  output_dim = 32
+)
+
+# Fusion network and MST-PMDN head 
+hidden_dim <- c(64, 32)
+n_mixtures <- 2
+
+# Combine the tabular module, image module, and fusion networks
+model <- define_mst_pmdn(
+  input_dim = ncol(x),
+  output_dim = ncol(y),
+  hidden_dim = hidden_dim,
+  n_mixtures = n_mixtures,
+  image_module = image_mod,
+  tabular_module = tabular_mod
+)
+
+# Model training
+fit <- train_mst_pmdn(
+  inputs = x,
+  outputs = y,
+  hidden_dim = hidden_dim,
+  n_mixtures = n_mixtures,
+  epochs = 10,
+  lr = 1e-3,
+  batch_size = 32,
+  image_inputs = x_image,
+  image_module = image_mod,
+  tabular_module = tabular_mod,
+  device = device
+)
+
+# Model inference
+pred <- predict_mst_pmdn(
+  fit$model,
+  new_inputs = x,
+  image_inputs = x_image,
+  device = device
+)
+print(names(pred))
+print(pred$pi[1:3, ])
+print(pred$mu[1:3, , ])
+
+# Draw samples 
+df_samples <- sample_mst_pmdn_df(
+  pred,
+  num_samples = 1,
+  device = device
+)
+print(head(df_samples))
+```
+
 ## References 
 
 Ambrogioni, L., Güçlü, U., van Gerven, M. A., & Maris, E. (2017). The kernel mixture network: A nonparametric method for conditional density estimation of continuous random variables. arXiv:1705.07111. 
