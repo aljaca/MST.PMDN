@@ -10,8 +10,6 @@ Author: Alex J. Cannon [aut, cre] (<https://orcid.org/0000-0002-8025-3790>)
 Description: Implements a distributional deep learning regression framework based on a mixture of multivariate skew t distributions. Provides user‐facing functions to define, train, predict, and sample from deep MST-PMDN models built with torch for R.
 License: GPL (>= 2)
 Encoding: UTF-8
-Imports:
-    torch,
-    coro,
-    stats
+Depends: torch
+Imports: coro, stats
 NeedsCompilation: no
