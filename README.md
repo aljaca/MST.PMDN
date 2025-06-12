@@ -22,6 +22,8 @@ By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN ca
 |          EVV | `"EVVNN"`               | `"LADmx"`                  |
 |          VVV | `"VVVNN"`               | `"LADmx"`                  |
 
+Similarly, if constraint on the nu (or degrees of freedom) parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the alpha (or skewness) parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) allows for implementation model-based multivariate skew t clustering.
+
 ## Installation
 
 ```r
