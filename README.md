@@ -7,7 +7,9 @@ The deep MST-PMDN model is a framework for conditional multivariate density esti
 
 ## Installation
 
-`install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.0.tar.gz")`
+```r
+install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.0.tar.gz")
+```
 
 ## References 
 
