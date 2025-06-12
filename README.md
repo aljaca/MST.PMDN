@@ -182,12 +182,15 @@ image_mod <- image_module(
   output_dim = 32
 )
 
-# Define the fusion network and MST-PMDN head 
+# Define the fusion network, MST-PMDN head, and training setup 
 hidden_dim <- c(64, 32)
+drop_hidden <- 0.5
 n_mixtures <- 2
 constraint <- "VVIFN"
 fixed_nu <- c(50, NA)
 constant_attr <- ""
+wd_tabular <- 0
+wd_image <- 0.2
 
 # Combine the tabular module, image module, and fusion network
 model <- define_mst_pmdn(
@@ -204,6 +207,7 @@ fit <- train_mst_pmdn(
   inputs = x,
   outputs = y,
   hidden_dim = hidden_dim,
+  drop_hidden = drop_hidden,
   n_mixtures = n_mixtures,
   constraint = constraint,
   fixed_nu = fixed_nu,
@@ -211,6 +215,8 @@ fit <- train_mst_pmdn(
   epochs = 10,
   lr = 1e-3,
   batch_size = 32,
+  wd_tabular = wd_tabular,
+  wd_image = wd_image,
   image_inputs = x_image,
   image_module = image_mod,
   tabular_module = tabular_mod,
