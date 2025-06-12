@@ -17,8 +17,10 @@ By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN ca
 |          VVI | `"VVINN"`               | `"LADmx"`                  |
 |          EEE | `"EEENN"`               | `"LADmx"`                  |
 |          EEV | `"EEVNN"`               | `"LADmx"`                  |
+|          EVE | `"EVENN"`               | `"LADmx"`                  |
 |          VEE | `"VEENN"`               | `"LADmx"`                  |
 |          VEV | `"VEVNN"`               | `"LADmx"`                  |
+|          VVE | `"VVENN"`               | `"LADmx"`                  |
 |          EVV | `"EVVNN"`               | `"LADmx"`                  |
 |          VVV | `"VVVNN"`               | `"LADmx"`                  |
 
