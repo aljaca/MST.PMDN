@@ -5,6 +5,10 @@ A ['torch for R'](https://torch.mlverse.org/) implementation of a distributional
 
 The deep MST-PMDN model is a framework for conditional multivariate density estimation that represents complicated joint output distributions as mixtures of skew-t components. The LAD decomposition allows for a tractable, interpretable, and parsimonious parameterization of the scale matrices, while explicit modeling of skewness and heavy tails can represent asymmetric behavior and tail dependence observed in real-world data. The dual-branch architecture fuses tabular and optional image inputs, making MST-PMDN applicable to diverse tasks where accurate uncertainty quantification and realistic ensemble generation are critical. Flexible constraint settings (e.g., fixed or learnable nu, normal approximations, shared vs. component-specific attributes) allow users to trade off parsimony and expressiveness, while the 'torch for R'-based implementation delivers GPU-accelerated training.
 
+## Installation
+
+`install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.0.tar.gz")`
+
 ## References 
 
 Ambrogioni, L., Güçlü, U., van Gerven, M. A., & Maris, E. (2017). The kernel mixture network: A nonparametric method for conditional density estimation of continuous random variables. arXiv:1705.07111. 
