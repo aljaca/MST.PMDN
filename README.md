@@ -152,24 +152,3 @@ The implementation consists of several key functions and modules:
 *   **Purpose:** Performs inference using the trained model.
 *   **Method:** Runs a forward pass on new inputs in evaluation mode (`torch_no_grad()`).
 *   **Output:** Raw model output list containing mixture parameters for the new inputs.
-
-## Model, Loss, and Sampling Consistency
-
-The core components – model definition (`define_mst_pmdn`), loss calculation (`loss_mst_pmdn`), and sampling (`sample_mst_pmdn`) – demonstrate consistency in their handling of the distribution parameters and transformations between different spaces.
-
-*   **Spaces:**
-    *   **Output Space:** The original space of the target variable `y` and component means `mu`. The full scale matrix `Sigma` (and its Cholesky factor `scale_chol`) are defined here.
-    *   **Standardized Space:** A conceptual space for each component `k` obtained via whitening: `v = scale_chol_k^{-1} * (y - mu_k)`. Variables like `v`, `w` (in loss), and `X` (in sampling) primarily relate to this space.
-
-*   **Model Output:** The model correctly outputs parameters (`mu`, `scale_chol`) defining the location and scale in the *output space*, along with shape (`nu`) and skewness (`alpha`) parameters.
-
-*   **Loss Function:**
-    *   Correctly calculates Mahalanobis distance (`maha`) using the standardized variable `v`.
-    *   Calculates the symmetric t-distribution PDF using `maha`.
-    *   **Key Point:** The skewness term `alpha_k^T w` implies that the learned `alpha` parameter operates on the *standardized* vector `w` (related to `v`). This means `alpha` defines skewness *after* the transformation by `scale_chol_k^{-1}`.
-    *   Uses `t_cdf` for the CDF calculation required by the skewness term.
-
-*   **Sampling Function:**
-    *   Generates a *standard* skew-normal variable `X` (mean 0, identity scale) based on the learned `alpha`.
-    *   Correctly transforms this standard variable `X` back into the *output space* using the scaling `W`, the Cholesky factor `scale_chol_s`, and the mean `mu_s`. This transformation `Y = mu_s + W * (scale_chol_s @ X)` is the inverse of the standardization performed in the loss function.
-    *   The generation of `X` based on `alpha` followed by the transformation using `scale_chol_s` aligns with the loss function's interpretation of `alpha` operating in the standardized space.
