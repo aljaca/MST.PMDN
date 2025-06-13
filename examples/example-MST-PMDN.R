@@ -2,7 +2,7 @@
 # Synthetic example of MST-PMDN with tabular and image inputs
 
 rm(list = ls())
-source("../R/MST-PMDN.R")
+library(MST.PMDN)
 torch_set_num_threads(1)
 
 sample_skew_mixture <- function(n = 1000, seed = NULL) {
