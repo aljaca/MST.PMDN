@@ -3,46 +3,59 @@
 \docType{package}
 \title{Deep Multivariate Skew t-Parsimonious Mixture Density Network}
 \description{
-The \pkg{MST.PMDN} package provides a distributional deep learning regression framework
-built on \pkg{torch} for R. Parameters of a mixture of multivariate skew t distributions
-that describe a  multivariate output are estimated by training a deep learning model
-with two  multi-modal input branches, one for tabular inputs and the other for (optional) 
-image inputs, both appropriately scaled. The two branches are provided as 
-user-defined \pkg{torch} modules. Outputs from each are concatenated and passed 
-through a dense fusion network, which then leads to the MST-PMDN head. In the 
-absence of both branches, the tabular inputs are fed directly into the dense 
-network. Following the approach used in model-based clustering (\pkg{mclust}), 
-scale matrices output from the MST-PMDN head are represented using a volume 
-(L)-shape (A)-orientation (D) (LAD) eigenvalue decomposition parameterization. 
-LAD attributes, the nu (or degrees of freedom) parameter (n), and the alpha (or 
-skewness) parameter (s) can be forced to be Variable or Equal between mixture 
-components (plus Identity for A and D). For n and s, values of nu and alpha can 
-also be constrained to emulate a multivariate normal (N) distribution. In the 
-case of n, users can specify fixed (F) values for nu by passing an optional 
-\code{fixed_nu} vector. If an element of \code{fixed_nu} is set to \code{NA}, 
-then the value of nu for this component is learned by the network. Different 
-model types are specified by setting the argument \code{constraint = "EIINN"}, 
+The \pkg{MST.PMDN} package implements the deep Multivariate Skew t-Parsimonious
+Mixture Density Network (MST-PMDN), a distributional deep learning regression framework
+built on \pkg{torch} for R. The \pkg{MST.PMDN} framework represents complicated joint output 
+distributions as mixtures of MST components. A volume (L)-shape 
+(A)-orientation (D) (LAD) eigenvalue decomposition parameterization 
+provides a tractable, interpretable, and parsimonious representation of 
+the components' scale matrices, while explicit modeling of skewness and 
+heavy tails can represent asymmetric behavior and tail dependence observed 
+in real-world data (e.g., compound events and extremes). Parameters of a 
+mixture of MST distributions that describe a multivariate output are 
+estimated by training a deep learning model with two multi-modal input 
+branches, one for tabular inputs and the other for (optional) image 
+inputs. The two branches are provided as user-defined \pkg{torch} modules. 
+Outputs from each are concatenated and passed through a dense fusion 
+network, which then leads to the MST-PMDN head. In the absence of both 
+branches, the tabular inputs are fed directly into the dense network.
+
+Following the approach used in model-based clustering (\pkg{mclust}), scale 
+matrices in the MST-PMDN head are represented using an LAD 
+eigen-decomposition parameterization. LAD attributes, the nu (or degrees of 
+freedom) parameter (n), and the alpha (or skewness) parameter (s) can be 
+forced to be Variable or Equal between mixture components (plus Identity for 
+A and D). For n and s, the model can also be constrained to emulate a 
+multivariate Gaussian (or normal) (N) distribution. In the case of n, users 
+can specify fixed (F) values for nu by passing an optional \code{fixed_nu} 
+vector. If an element of \code{fixed_nu} is set to \code{NA}, then the value 
+of nu for this component is learned by the network. Different model types 
+are specified by setting the argument \code{constraint = "EIINN"}, 
 \code{"VEVFV"}, etc. where each letter position in the argument corresponds, 
 respectively, to each of the LADns attributes. Furthermore, values of mu (or 
-means) (m), pi (or mixing coefficients) (x), volume-shape-orientation attributes 
-(LAD), nu (or degrees of freedom) (n), and alpha (or skewness) (s) for the 
-mixtures can be made to be independent of inputs by specifying any combination 
-of \code{constant_attr = "m"}, \code{"mx"}, ..., \code{"LADmxns"}.
+means) (m), pi (or mixing coefficients) (x), volume-shape-orientation 
+attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to 
+be independent of inputs by specifying any combination of 
+\code{constant_attr = "m"}, \code{"mx"}, ..., \code{"LADmxns"}.
 
-The deep MST-PMDN model is a framework for conditional multivariate 
-density estimation that represents complicated joint output 
-distributions as mixtures of skew-t components. The LAD decomposition 
-allows for a tractable, interpretable, and parsimonious 
-parameterization of the scale matrices, while explicit modeling of 
-skewness and heavy tails can represent asymmetric behavior and tail 
-dependence observed in real-world data. The dual-branch architecture 
-fuses tabular and optional image inputs, making MST-PMDN applicable to 
-diverse tasks where accurate uncertainty quantification and realistic 
-ensemble generation are critical. Flexible constraint settings (e.g., 
-fixed or learnable nu, normal approximations, shared vs. 
-component-specific attributes) allow users to trade off parsimony and 
-expressiveness, while the \pkg{torch} implementation delivers 
-GPU-accelerated training.
+By combining appropriate values of \code{constraint} and 
+\code{constant_attr}, MST-PMDN can emulate the Gaussian finite mixture 
+models implemented by \pkg{mclust}, i.e., for unconditional density 
+estimation or model-based clustering. Similarly, if the constraint on the nu 
+parameter (n) is loosened (e.g., \code{constraint = "VVVEN"} with 
+\code{constant_attr = "LADmxn"}), MST-PMDN can emulate model-based 
+multivariate t clustering models provided by \pkg{teigen}. Going one step 
+further, removing the constraint on the skewness parameter (s) (e.g., 
+\code{constraint = "VVVEE"} with \code{constant_attr = "LADmxns"}) 
+implements model-based MST clustering.
+
+While it can be used for model-based density estimation and clustering 
+tasks, the primary purpose of the \pkg{MST.PMDN} package is to implement 
+likelihood-based deep generative models. With unconstrained or partially 
+constrained \code{constant_attr}, the MST-PMDN framework allows parameters 
+of the mixture of multivariate Gaussian, t, or skew t distributions to 
+depend on tabular and image covariates via user-specified \pkg{torch} 
+modules.
 }
 \details{
 Key user-facing functions include:
