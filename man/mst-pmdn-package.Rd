@@ -9,7 +9,7 @@ built on \pkg{torch} for R. The \pkg{MST.PMDN} framework represents complicated 
 distributions as mixtures of MST components. A volume (L)-shape 
 (A)-orientation (D) (LAD) eigenvalue decomposition parameterization 
 provides a tractable, interpretable, and parsimonious representation of 
-the components' scale matrices, while explicit modeling of skewness and 
+the components\' scale matrices, while explicit modeling of skewness and 
 heavy tails can represent asymmetric behavior and tail dependence observed 
 in real-world data (e.g., compound events and extremes). Parameters of a 
 mixture of MST distributions that describe a multivariate output are 
