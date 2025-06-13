@@ -30,8 +30,8 @@ define_mst_pmdn(
   \item{output_dim}{Integer. Dimension \code{d} of the multivariate response.}
   \item{hidden_dim}{Integer vector. Sizes of hidden layers in the dense fusion network.}
   \item{n_mixtures}{Integer. Number of skew t mixture components \code{M}.}
-  \item{constraint}{Character. Code for volume–shape–orientation, degrees of freedom \code{nu}, and skew constraints (e.g.\ “\code{VVVFN}”).}
-  \item{constant_attr}{Character. Flags for parameters held constant (e.g.\ “\code{m}” for means, “\code{s}” for skew, etc.).}
+  \item{constraint}{Character. Code for volume–shape–orientation, degrees of freedom \code{nu}, and skew constraints (e.g., “\code{VVVFN}”).}
+  \item{constant_attr}{Character. Flags for parameters held constant (e.g., “\code{m}” for means, “\code{s}” for skew, etc.).}
   \item{activation}{Function. \pkg{torch} activation for hidden layers (default \code{nn_relu}).}
   \item{drop_hidden}{Numeric between 0 and 1. Dropout probability after each hidden layer.}
   \item{image_module}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
