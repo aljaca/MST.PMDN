@@ -56,7 +56,7 @@ train_mst_pmdn(
   \item{min_vol_shape}{Numeric; minimum allowed volume (L) and shape (A) diagonal values.}
   \item{min_mix_weight}{Numeric; minimum mixture weight per component.}
   \item{jitter}{Numeric; small ridge added to covariance diagonals for stability.}
-  \item{activation}{Activation function for hidden layers (e.g.\ \code{nn_tanh}, \code{nn_relu}).}
+  \item{activation}{Activation function for hidden layers (e.g., \code{nn_tanh}, \code{nn_relu}).}
   \item{epochs}{Integer; maximum number of training epochs.}
   \item{lr}{Numeric; learning rate for the optimizer.}
   \item{batch_size}{Integer; mini-batch size.}
@@ -76,7 +76,7 @@ train_mst_pmdn(
   \item{image_inputs}{Optional array or \code{torch_tensor} of image data (4D) for multimodal models.}
   \item{image_module}{Optional \code{nn_module} for processing \code{image_inputs}.}
   \item{tabular_module}{Optional \code{nn_module} for processing \code{inputs}.}
-  \item{device}{Character; torch device to use (e.g.\ \code{"cpu"} or \code{"cuda"}).}
+  \item{device}{Character; torch device to use (e.g., \code{"cpu"} or \code{"cuda"}).}
 }
 \details{
 Splits the data into training/validation sets (unless \code{custom_split} is provided), initializes or loads the model,
