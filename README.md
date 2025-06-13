@@ -24,9 +24,7 @@ By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN ca
 |          EVV | ellipsoidal, equal volume                           | `"EVVNN"`               | `"LADmx"`                  |
 |          VVV | ellipsoidal, varying volume, shape, and orientation | `"VVVNN"`               | `"LADmx"`                  |
 
-Results from a comparison between mclust and MST-PMDN as an mclust emulator are [shown here](examples/example-iris-mclust.pdf).
-
-Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the skewness parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) implements model-based multivariate skew t clustering.
+A comparison between 'mclust' and MST-PMDN with the constraints in the table above are [shown here](examples/example-iris-mclust.pdf). Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the skewness parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) implements model-based multivariate skew t clustering.
 
 While it can be used for model-based density estimation and clustering tasks, the primary purpose of the `MST.PMDN` package is to implement likelihood-based deep generative models. With unconstrained or partially constrained `constant_attr`, the MST-PMDN framework allows parameters of the mixture of multivariate Gaussian, t, or skew t distributions to depend on tabular and image covariates via user-specified `torch` modules. An example of this use case is provided below.
 
