@@ -1,3 +1,4 @@
 ^\.gitattributes$
 ^examples(/.*)?$
 ^deep-MST-PMDN\.png$
+^MST.PMDN-manual\.pdf$
