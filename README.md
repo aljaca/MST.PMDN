@@ -28,7 +28,7 @@ Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constra
 
 While it can be used for model-based density estimation and clustering tasks, the primary purpose of the `MST.PMDN` package is to implement likelihood-based deep generative models. With unconstrained or partially constrained `constant_attr`, the MST-PMDN framework allows parameters of the mixture of multivariate Gaussian, t, or skew t distributions to depend on tabular and image covariates via user-specified `torch` modules. An example of this use case is provided below.
 
-# Deep MST-PMDN Architecture
+## Deep MST-PMDN Architecture
 
 <img src="deep-MST-PMDN.png" alt="Deep MST-PMDN" width="360"/>
 
@@ -280,7 +280,7 @@ print(head(df_samples))
 
 ## Function Summaries
 
-The implementation consists of several key functions and modules:
+The deep MST-PMDN implementation consists of the following key functions and modules:
 
 ### Function: `t_cdf(z, nu, nu_switch = 20)`
 
