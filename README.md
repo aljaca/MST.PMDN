@@ -278,6 +278,8 @@ df_samples <- sample_mst_pmdn_df(
 print(head(df_samples))
 ```
 
+Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf).
+
 ## Function Summaries
 
 The deep MST-PMDN implementation consists of the following key functions and modules:
