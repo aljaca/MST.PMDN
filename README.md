@@ -1,5 +1,5 @@
 # Deep Multivariate Skew t-Parsimonious Mixture Density Network (MST-PMDN) 
-### Alex J. Cannon [alex.cannon@ec.gc.ca](mailto:alex.cannon@ec.gc.ca?subject=MST-PMDN)
+### Alex J. Cannon ([alex.cannon@ec.gc.ca](mailto:alex.cannon@ec.gc.ca?subject=MST-PMDN))
 
 `MST.PMDN` is a ['torch for R'](https://torch.mlverse.org/) implementation of a distributional regression model based on a Multivariate Skew t-Parsimonious Mixture Density Network (MST-PMDN). The MST-PMDN framework represents complicated joint output distributions as mixtures of multivariate skew t (['sn'](https://cran.r-project.org/package=sn)) components. A volume (L)-shape (A)-orientation (D) (LAD) eigenvalue decomposition parameterization provides a tractable, interpretable, and parsimonious representation of the components' scale matrices, while explicit modeling of skewness and heavy tails can represent asymmetric behavior and tail dependence observed in real-world data (e.g., compound events and extremes). 
 
