@@ -28,6 +28,10 @@ Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constra
 
 While it can be used for model-based density estimation and clustering tasks, the primary purpose of the `MST.PMDN` package is to implement likelihood-based deep generative models. With unconstrained or partially constrained `constant_attr`, the MST-PMDN framework allows parameters of the mixture of multivariate Gaussian, t, or skew t distributions to depend on tabular and image covariates via user-specified `torch` modules. An example of this use case is provided below.
 
+# Deep MST-PMDN Architecture
+
+<img src="deep-MST-PMDN.png" alt="Deep MST-PMDN" width="360"/>
+
 ## Installation
 
 ```r
@@ -307,10 +311,6 @@ Srucca, L., Fop, M., Murphy, T. B., & Raftery, A. E. (2016). mclust 5: Clusterin
 Williams, P. M. (1996). Using neural networks to model conditional multivariate densities. Neural Computation, 8(4), 843-854.
 
 ---
-
-# Deep MST-PMDN Architecture
-
-<img src="deep-MST-PMDN.png" alt="Deep MST-PMDN" width="360"/>
 
 ## Function Summaries
 
