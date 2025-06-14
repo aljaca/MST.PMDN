@@ -26,13 +26,13 @@ eigen-decomposition parameterization. LAD attributes, the nu (or degrees of
 freedom) parameter (n), and the alpha (or skewness) parameter (s) can be 
 forced to be Variable or Equal between mixture components (plus Identity for 
 A and D). For n and s, the model can also be constrained to emulate a 
-multivariate Gaussian (or normal) (N) distribution. In the case of n, users 
+multivariate Gaussian (or normal) (N) distribution. Different model types 
+are specified by setting the argument \code{constraint = "EIINN"}, 
+\code{"VEVEV"}, etc. where each letter position in the argument corresponds, 
+respectively, to each of the LADns attributes. In the case of n, users 
 can specify fixed (F) values for nu by passing an optional \code{fixed_nu} 
 vector. If an element of \code{fixed_nu} is set to \code{NA}, then the value 
-of nu for this component is learned by the network. Different model types 
-are specified by setting the argument \code{constraint = "EIINN"}, 
-\code{"VEVFV"}, etc. where each letter position in the argument corresponds, 
-respectively, to each of the LADns attributes. Furthermore, values of mu (or 
+of nu for this component is learned by the network. Furthermore, values of mu (or 
 means) (m), pi (or mixing coefficients) (x), volume-shape-orientation 
 attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to 
 be independent of inputs by specifying any combination of 
