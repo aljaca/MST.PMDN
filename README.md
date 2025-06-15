@@ -139,6 +139,12 @@ tabular_module <- nn_module(
     x
   }
 )
+tabular_mod <- tabular_module(
+  input_dim = ncol(x),
+  hidden_dims = c(32, 16),
+  output_dim = 16,
+  dropout_rate = 0.5
+)
 
 # The ImageModule accepts a 2×32×32 image, applies a 3×3 conv (2→16)
 # with BN, ReLU  and 2×2 max-pool (→16×16), repeats with a 16→32 conv
@@ -201,15 +207,6 @@ image_module <- nn_module(
     nnf_relu(self$bn_fc(x))
   }
 )
-
-# Instantiate the tabular and image modules
-tabular_mod <- tabular_module(
-  input_dim = ncol(x),
-  hidden_dims = c(32, 16),
-  output_dim = 16,
-  dropout_rate = 0.5
-)
-
 image_mod <- image_module(
   in_channels = dim(x_image)[2],
   img_size = dim(x_image)[3],
@@ -232,16 +229,6 @@ wd_image <- 0.01        # Weight decay for image module
 epochs <- 20            # Number of training epochs
 lr <- 1e-3              # Initial Adam learning rate
 batch_size <- 32        # Batch size
-
-# Combine the tabular module, image module, and fusion network
-model <- define_mst_pmdn(
-  input_dim = ncol(x),
-  output_dim = ncol(y),
-  hidden_dim = hidden_dim,
-  n_mixtures = n_mixtures,
-  image_module = image_mod,
-  tabular_module = tabular_mod
-)
 
 # Model training
 fit <- train_mst_pmdn(
