@@ -279,43 +279,43 @@ Output from a more complete example using an extended dataset at the same locati
 
 The deep MST-PMDN implementation consists of the following key functions and modules:
 
-### Function: `t_cdf(z, nu, nu_switch = 20)`
+#### Function: `t_cdf(z, nu, nu_switch = 20)`
 
 *   **Purpose:** Calculates a differentiable *approximation* of the univariate Student's t cumulative distribution function (CDF).
 *   **Method:** For `nu >= nu_switch`, transforms the input quantile `z` using a scaling factor derived from the degrees of freedom `nu`, then computes the standard normal CDF of the result using the error function (`erf`). Otherwise, uses `pt` from R and manually inserts a gradient for `z` into the computation graph and uses a finite difference approximation for `nu`. Alternatively, can numerically integrate a torch-compatible probability density function `t_pdf_int`, which will be faster on GPUs.
 *   **Context:** Switches between the fast approximation and the slow `pt` (or numerical integration) calculation. Essential for the loss function's skewness calculation.
 
-### Function: `sample_gamma(shape, scale, device)`
+#### Function: `sample_gamma(shape, scale, device)`
 
 *   **Purpose:** Generates random samples from a Gamma distribution using `torch`.
 *   **Method:** Wraps R's `rgamma` function, vectorizes it using `mapply`, and converts the output to a `torch` tensor on the specified device.
 *   **Context:** Used within the `sample_mst_pmdn` function to generate the scaling variable needed for sampling from the t-distribution component of the skew-t.
 
-### Function: `build_orthogonal_matrix(params, dim)`
+#### Function: `build_orthogonal_matrix(params, dim)`
 
 *   **Purpose:** Constructs a batch of orthogonal matrices (representing rotation/orientation `D`).
 *   **Method:** Uses the matrix exponential of a skew-symmetric matrix, where the input `params` parameterize the upper triangle of the skew-symmetric matrix.
 *   **Context:** Used in the main model (`define_mst_pmdn`) to generate the orientation component `D` of the LAD decomposition when orientation is not fixed to the identity matrix.
 
-### Function: `init_mu_kmeans(model, outputs_train, ...)`
+#### Function: `init_mu_kmeans(model, outputs_train, ...)`
 
 *   **Purpose:** Initializes the component mean parameters (`mu`) using k-means clustering.
 *   **Method:** Applies k-means to the training output data to find initial centroids. These centroids initialize either the `model$mu` parameters (if constant) or the bias of the `model$fc_mu` layer (if network-dependent), setting initial weights to zero.
 *   **Context:** A heuristic to provide a potentially better starting point for training compared to random initialization, aiming for faster convergence.
 
-### Module: `weight_norm_linear` (nn_module)
+#### Module: `weight_norm_linear` (nn_module)
 
 *   **Purpose:** Implements a linear layer with weight normalization.
 *   **Method:** Decomposes the weight matrix `W` into a direction `V` and a magnitude `g`, learning these instead of `W` directly.
 *   **Context:** Used for most linear layers within the network architecture (hidden layers and parameter prediction heads) to potentially improve training stability and convergence speed.
 
-### Function: `init_weight_norm(module)`
+#### Function: `init_weight_norm(module)`
 
 *   **Purpose:** Initializes the parameters (`V`, `g`) of a `weight_norm_linear` layer.
 *   **Method:** Uses Kaiming (He) normal initialization for the direction `V` and sets the initial magnitude `g` accordingly.
 *   **Context:** Applied recursively to the model to ensure proper initialization of all weight-normalized layers.
 
-### Module: `define_mst_pmdn(...)` (nn_module)
+#### Module: `define_mst_pmdn(...)` (nn_module)
 
 *   **Purpose:** Defines the main MST-PMDN neural network architecture.
 *   **Method:**
@@ -326,7 +326,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
     *   Constructs the full scale matrix `Sigma = L * D * diag(A) * D^T` and computes its Cholesky decomposition (`scale_chol`) for each component.
 *   **Output:** Returns a list containing all mixture parameters (`pi`, `mu`, `scale_chol`, `nu`, `alpha`) and LAD components (`L`, `A`, `D`), batched appropriately.
 
-### Function: `loss_mst_pmdn(output, target)`
+#### Function: `loss_mst_pmdn(output, target)`
 
 *   **Purpose:** Computes the negative log-likelihood (NLL) loss.
 *   **Method:**
@@ -339,7 +339,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
     *   Combines component log-densities using mixture weights `pi` via `logsumexp`.
     *   Returns the mean NLL over the batch.
 
-### Function: `sample_mst_pmdn(mdn_output, num_samples, ...)`
+#### Function: `sample_mst_pmdn(mdn_output, num_samples, ...)`
 
 *   **Purpose:** On-device generation of random samples from the predicted mixture distribution.
 *   **Method:**
@@ -352,7 +352,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
     *  `samples` - a torch tensor of shape `[S, B, d]`, where `S` is `num_samples`, `B` is the batch size (rows of the predictor matrix), and `d` is the response dimension.  
     *  `components` - a torch tensor of shape `[S, B]` giving the **1-based** component label (`1..G`) used for each draw.
 
-### Function: `sample_mst_pmdn_df(mdn_output, num_samples, ...)`
+#### Function: `sample_mst_pmdn_df(mdn_output, num_samples, ...)`
 
 *   **Purpose:** Generates random samples from the predicted mixture distribution and returns a formatted R data frame.
 *   **Method:**
@@ -367,13 +367,13 @@ The deep MST-PMDN implementation consists of the following key functions and mod
     *  `draw` - the draw number (`1..num_samples`) for that predictor row;  
     *  `comp` - a factor giving the 1-based component label (`1..G`).  
 
-### Function: `train_mst_pmdn(...)`
+#### Function: `train_mst_pmdn(...)`
 
 *   **Purpose:** Manages the model training process.
 *   **Method:** Includes data loading, model/optimizer setup (with k-means init), training loop (loss calculation, backpropagation, optimization), validation, learning rate scheduling, checkpointing, and early stopping. Handles optional image inputs correctly.
 *   **Output:** Trained model, loss history, and training/validation indices.
 
-### Function: `predict_mst_pmdn(model, new_inputs, ...)`
+#### Function: `predict_mst_pmdn(model, new_inputs, ...)`
 
 *   **Purpose:** Performs inference using the trained model.
 *   **Method:** Runs a forward pass on new inputs in evaluation mode (`torch_no_grad()`).
