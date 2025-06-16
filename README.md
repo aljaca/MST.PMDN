@@ -221,8 +221,8 @@ image_mod <- image_module(
 hidden_dim <- c(64, 32) # Hidden nodes in fusion network
 drop_hidden <- 0.1      # Dropout for fusion network
 n_mixtures <- 2         # 2 components in the MST mixture model
-constraint <- "VVIFN"   # LAD = Variable-Variable-Identity; nu = one component fixed; skewness = normal 
-fixed_nu <- c(50, NA)   # nu = 50 for 1st component (i.e., approximately normal); variable for 2nd
+constraint <- "VVIFN"   # LAD = "V"ariable-"V"ariable-"I"dentity; nu = 1 component "F"ixed; skewness = "N"ormal 
+fixed_nu <- c(50, NA)   # nu = 50 for 1st component (i.e., approximately "N"ormal); "V"ariable for 2nd
 constant_attr <- ""     # All non-normal component attributes are free to vary with covariates
 wd_tabular <- 0         # Weight decay for tabular module
 wd_image <- 0.01        # Weight decay for image module
