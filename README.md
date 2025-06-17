@@ -273,7 +273,8 @@ df_samples <- sample_mst_pmdn_df(
 print(head(df_samples))
 ```
 
-Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf).
+Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf),
+[here](examples/wave-surge-dailymax.VVIFN2.testing.pdf), and [here](examples/extreme-cases_wave-surge-dailymax.VVIFN2.testing.pdf).
 
 ## Function Summaries
 
