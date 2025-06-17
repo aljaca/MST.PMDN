@@ -21,8 +21,9 @@ torch_set_num_interop_threads(num_threads)
 data <- read.csv("CCCRIS-181947_wave-surge_ERA5.csv")
 date <- data[-1, 1]
 
-# Training (1980-2015) and validation (2016-2019) splits 
+# Training (1980-2015), validation (2016-2018), and test (2019) splits 
 custom_split <- substr(date, 1, 4) <= 2015
+test_split <- substr(date, 1, 4) == 2019
 
 y <- data[, c("Wave.m", "Surge.m")]
 y <- jitter(as.matrix(y), 5)
@@ -279,7 +280,17 @@ out.pdf <- paste0("wave-surge-dailymax.", modelname, skewtname,
                   constant_attr, n_mixtures, ".pdf")
 
 ##
-# Training/validation of deep MST-PMDN network
+# Training/validation/testing of deep MST-PMDN network
+
+x_test <- x[test_split, ]
+x_image_test <- x_image[test_split, , , ]
+y_test <- y[test_split, ]
+
+x <- x[!test_split, ]
+x_image <- x_image[!test_split, , , ]
+y <- y[!test_split, ]
+
+custom_split <- custom_split[!test_split]
 
 t1 <- Sys.time()
 fit <- train_mst_pmdn(
@@ -322,9 +333,9 @@ t2 <- Sys.time()
 print(t2 - t1)
 
 ##
-# Prediction using both tabular and image inputs.
+# Prediction on test split using both tabular and image inputs.
 
-pred <- predict_mst_pmdn(fit$model, x, x_image, device = device)
+pred <- predict_mst_pmdn(fit$model, x_test, x_image_test, device = device)
 samples <- as.matrix(sample_mst_pmdn(pred, num_samples = 1)$samples[1, , ])
 samples[samples[, 1] < min(y[, 1]), 1] <- min(y[, 1])
 cat("mu:\n")
@@ -342,50 +353,43 @@ print(pred$nu[1:2, ])
 cat("alpha:\n")
 print(pred$alpha[1:2, , ])
 
-cat("Validation statistics:\n")
-print(cor(y[!custom_split, ]))
-print(cor(samples[!custom_split, ]))
-
-print(cor(x[!custom_split, ], y[!custom_split, ]))
-print(cor(y[!custom_split, ], samples[!custom_split, ]))
+cat("Test statistics:\n")
+print(cor(y_test))
+print(cor(samples))
 
 ##
-# Stochastic ensemble generation on validation split
-
-x_valid <- x[!custom_split, ]
-x_image_valid <- x_image[!custom_split, , , ]
-y_valid <- y[!custom_split, ]
+# Stochastic ensemble generation on test split
 
 n_ens <- 30
 rsamples_ens <- list()
 for(iii in seq(n_ens)){
-    rsamples_iii <- matrix(0, ncol = 2, nrow = nrow(x_valid))
-    rsamples_iii[1, ] <- y_valid[1, ]
-    cat(iii, '[', nrow(x_valid), '] : ')
-    for (i in 2:nrow(x_valid)) {
+    rsamples_iii <- matrix(0, ncol = 2, nrow = nrow(x_test))
+    rsamples_iii[1, ] <- y_test[1, ]
+    cat(iii, '[', nrow(x_test), '] : ')
+    for (i in 2:nrow(x_test)) {
       if (i %% 10 == 0) cat(i, "")
-      x_valid_i <- cbind(x_valid[i, 1:(ncol(x) - 2), drop = FALSE],
-                         rsamples_iii[i - 1, , drop = FALSE])
-      x_image_valid_i <- x_image_valid[i , , , , drop=FALSE]
+      x_test_i <- cbind(x_test[i, 1:(ncol(x) - 2), drop = FALSE],
+                        rsamples_iii[i - 1, , drop = FALSE])
+      x_image_test_i <- x_image_test[i , , , , drop=FALSE]
       rsamples_i <- sample_mst_pmdn(predict_mst_pmdn(fit$model,
-                                    x_valid_i, x_image_valid_i,
+                                    x_test_i, x_image_test_i,
                                     device = device),
                                     num_samples = 1)$samples[1, , ]
       rsamples_iii[i, ] <- as.matrix(rsamples_i)
     }
     rsamples_iii[rsamples_iii[, 1] < y1_min, 1] <- y1_min
-    colnames(rsamples_iii) <- paste("MST-PMDN", colnames(y_valid))
+    colnames(rsamples_iii) <- paste("MST-PMDN", colnames(y_test))
     rsamples_ens[[iii]] <- rsamples_iii
     cat("\n")
 }
 
-escore_valid <- y_valid[, 1] * NA
-for(i in seq(nrow(y_valid))) {
-  y_i <- y_valid[i, ]
+escore_test <- y_test[, 1] * NA
+for(i in seq(nrow(y_test))) {
+  y_i <- y_test[i, ]
   dat_i <- sapply(rsamples_ens, function(x, i) x[i, ], i = i)
-  escore_valid[i] <- scoringRules::es_sample(y_i, dat_i)
+  escore_test[i] <- scoringRules::es_sample(y_i, dat_i)
 }
-cat("Energy score valid:", mean(escore_valid), "\n")
+cat("Testing energy score:", mean(escore_test), "\n")
 
 ##
 # Evaluation plots
@@ -403,41 +407,41 @@ legend("topright", c("Train", "Validation"), col = c(1, 2), pch = 15)
 
 dev.next()
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
-plot(y_valid[, 1], y_valid[, 2], main = "Original Data",
+plot(y_test[, 1], y_test[, 2], main = "Original Data",
      col = scales::alpha("black", 0.2), pch = 19, cex = 1.5,
      xlab = colnames(y)[1], ylab = colnames(y)[2])
 plot(rsamples_ens[[1]][, 1], rsamples_ens[[1]][, 2], xlab = colnames(y)[1],
      ylab = colnames(y)[2], main = "MST-PMDN samples",
      col = scales::alpha("darkblue", 0.2), pch = 19, cex = 1.5)
-image(MASS::kde2d(y_valid[, 1], y_valid[, 2]))
+image(MASS::kde2d(y_test[, 1], y_test[, 2]))
 image(MASS::kde2d(rsamples_ens[[1]][, 1], rsamples_ens[[1]][, 2]))
 
 dev.next()
 par(mfrow = c(2, 2), mar = c(4, 4, 4, 1))
-acf(y_valid[, 1, drop=FALSE], lwd = 2)
-acf(y_valid[, 2, drop=FALSE], lwd = 2)
+acf(y_test[, 1, drop=FALSE], lwd = 2)
+acf(y_test[, 2, drop=FALSE], lwd = 2)
 acf(rsamples_ens[[1]][, 1, drop=FALSE], col = "blue", lwd = 2)
 acf(rsamples_ens[[1]][, 2, drop=FALSE], col = "blue", lwd = 2)
 
 dev.next()
 lims <- apply(do.call(rbind, rsamples_ens), 2, function(x) range(pretty(x)))
 par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
-for(i in seq(ncol(y_valid))) {
-    qqplot(y_valid[, i], y_valid[, i], main = colnames(y)[i],
-         col = NA, pch = NA, xlab = "Original Data",
-         ylab = "MST-PMDN samples", xlim = lims[, i], ylim = lims[, i])
+for(i in seq(ncol(y_test))) {
+    qqplot(y_test[, i], y_test[, i], main = colnames(y)[i],
+           col = NA, pch = NA, xlab = "Original Data",
+           ylab = "MST-PMDN samples", xlim = lims[, i], ylim = lims[, i])
     for(ens in seq_along(rsamples_ens)) {
-        points(sort(y_valid[, i]), sort(rsamples_ens[[ens]][, i]),
+        points(sort(y_test[, i]), sort(rsamples_ens[[ens]][, i]),
                pch='+', col = scales::alpha("darkblue", 0.05))
     }
     grid()
     abline(0, 1, lty = 2)
 }
-for(i in seq(ncol(y_valid))) {
-    plot(as.Date(date[!custom_split]), y_valid[, i], pch = 1, cex = 0.75,
+for(i in seq(ncol(y_test))) {
+    plot(as.Date(date[test_split]), y_test[, i], pch = 1, cex = 0.75,
          xlab = "Date", ylab = colnames(y)[i], ylim = lims[, i])
     for(ens in seq_along(rsamples_ens)) {
-        points(as.Date(date[!custom_split]), rsamples_ens[[ens]][, i],
+        points(as.Date(date[test_split]), rsamples_ens[[ens]][, i],
                pch='+', col = scales::alpha("darkblue", 0.05))
     }
     grid()
@@ -447,7 +451,7 @@ for(i in seq(ncol(y_valid))) {
 # Time series of degrees-of-freedom nu
 
 dev.next()
-plot(as.Date(date[!custom_split]), pred$nu[!custom_split, n_mixtures],
+plot(as.Date(date[test_split]), pred$nu[, n_mixtures],
      xlab = "Year", ylab = expression(nu), ylim=c(0, 51), type = "p",
      pch = 15, col = scales::alpha("blue", 0.5))
 grid()
@@ -621,8 +625,8 @@ multivar_rank_histograms_4panel <- function(
 }
 
 dev.next()
-mrh_valid <- multivar_rank_histograms_4panel(y_valid, rsamples_ens,
-               nbins = n_ens+1)
+mrh_test <- multivar_rank_histograms_4panel(y_test, rsamples_ens,
+              nbins = n_ens+1)
 
 dev.off()
 
