@@ -15,7 +15,7 @@ train_mst_pmdn(
   fixed_nu               = NULL,
   range_nu               = c(3, 50),
   nu_switch              = 20,
-  max_alpha              = 5,
+  max_alpha              = 2.5,
   min_vol_shape          = 1e-2,
   min_mix_weight         = 1e-4,
   jitter                 = 1e-6,
