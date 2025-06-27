@@ -562,9 +562,11 @@ define_mst_pmdn <- function(
         } else {
           self$fc_alpha <- weight_norm_linear(self$final_hidden_dim, alpha_size)      
           init_sd <- 0.02
-          self$fc_alpha$V$normal_(0, init_sd)
-          self$fc_alpha$bias$normal_(0, init_sd)
-          self$fc_alpha$g$fill_(0)
+          with_no_grad({
+            self$fc_alpha$V$normal_(0, init_sd)
+            self$fc_alpha$bias$normal_(0, init_sd)
+            self$fc_alpha$g$fill_(0)
+          })
         }
       }
     },
