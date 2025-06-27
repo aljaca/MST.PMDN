@@ -19,7 +19,7 @@ define_mst_pmdn(
   tabular_module  = NULL,
   fixed_nu        = NULL,
   range_nu        = c(3, 50),
-  max_alpha       = 5,
+  max_alpha       = 2.5,
   min_vol_shape   = 1e-2,
   min_mix_weight  = 1e-4,
   jitter          = 1e-6
