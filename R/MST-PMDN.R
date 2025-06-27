@@ -552,13 +552,19 @@ define_mst_pmdn <- function(
       self$skew_none   <- (skew_letter == "N")
       self$skew_shared <- (skew_letter == "E")
       self$skew_vary   <- (!self$skew_none && !self$skew_shared)
+      # ---------------  Skewness (alpha)  ---------------
       if (!self$skew_none) {
-        alpha_size <- if (self$skew_shared) output_dim else (n_mixtures *
-                                                               output_dim)
+        alpha_size <- if (self$skew_shared) output_dim else (n_mixtures * output_dim)
         if (grepl("s", constant_attr)) {
-          self$alpha_param <- nn_parameter(torch_zeros(alpha_size))
+          self$alpha_param <- nn_parameter(
+            torch_randn(alpha_size, device = self$device, dtype = torch_float()) * 0.05
+          )      
         } else {
-          self$fc_alpha <- weight_norm_linear(self$final_hidden_dim, alpha_size)
+          self$fc_alpha <- weight_norm_linear(self$final_hidden_dim, alpha_size)      
+          init_sd <- 0.02
+          self$fc_alpha$V$normal_(0, init_sd)
+          self$fc_alpha$bias$normal_(0, init_sd)
+          self$fc_alpha$g$fill_(0)
         }
       }
     },
