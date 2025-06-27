@@ -523,10 +523,11 @@ define_mst_pmdn <- function(
             self$fc_nu_partial <- weight_norm_linear(self$final_hidden_dim,
                                                      nu_size)
             # Initialize raw_nu bias to 0 (targets middle of range via sigmoid)
-            # Initialize weights and scales to zero for stability
-            self$fc_nu_partial$V$detach()$fill_(0)
-            self$fc_nu_partial$g$detach()$fill_(0)
-            self$fc_nu_partial$bias$detach()$fill_(0)
+            with_no_grad({
+              self$fc_nu_partial$V$normal_(0, 0.02)
+              self$fc_nu_partial$g$fill_(0)
+              self$fc_nu_partial$bias$fill_(0)
+            })
           }
         }
       } else if (!self$nu_normal_approx) {
@@ -539,10 +540,11 @@ define_mst_pmdn <- function(
           # Define a weight-normalized linear layer & custom initialize it
           self$fc_nu <- weight_norm_linear(self$final_hidden_dim, nu_size)
           # Initialize raw_nu bias to 0 (targets middle of range via sigmoid)
-          # Initialize weights and scales to zero for stability
-          self$fc_nu$V$detach()$fill_(0)    # zero all weights
-          self$fc_nu$g$detach()$fill_(0)    # zero all scale factors
-          self$fc_nu$bias$detach()$fill_(0) # Bias=0 -> sigmoid=0.5
+          with_no_grad({
+            self$fc_nu$V$normal_(0, 0.02)
+            self$fc_nu$g$fill_(0)
+            self$fc_nu$bias$fill_(0)
+          })
         }
       }
       # ----------------
@@ -561,10 +563,9 @@ define_mst_pmdn <- function(
           )      
         } else {
           self$fc_alpha <- weight_norm_linear(self$final_hidden_dim, alpha_size)      
-          init_sd <- 0.02
           with_no_grad({
-            self$fc_alpha$V$normal_(0, init_sd)
-            self$fc_alpha$bias$normal_(0, init_sd)
+            self$fc_alpha$V$normal_(0, 0.02)
+            self$fc_alpha$bias$normal_(0, 0.02)
             self$fc_alpha$g$fill_(0)
           })
         }
