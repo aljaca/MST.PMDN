@@ -826,7 +826,7 @@ define_mst_pmdn <- function(
 # PMDN skew t-distribution loss function
 # --------------------------------------
 
-loss_mst_pmdn <- function(output, target, nu_switch = 20) {
+loss_mst_pmdn <- function(output, target, nu_switch = 20, lambda_alpha = 0) {
   # Output must have: pi, mu, scale (Cholesky L), nu, alpha
   # target shape: [B, d]
   pi         <- output$pi         # [B, M]
@@ -879,6 +879,8 @@ loss_mst_pmdn <- function(output, target, nu_switch = 20) {
   weighted_log_probs <- torch_log(pi$clamp(min = 1e-12)) + log_skewt # [B, M]
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
+  # L2 penalty on final alpha values
+  loss <- loss + lambda_alpha * alpha$pow(2)$mean()
   loss
 }
 
@@ -990,6 +992,7 @@ train_mst_pmdn <- function(inputs,
                            min_mix_weight = 1e-4,
                            jitter = 1e-6,
                            activation = nn_tanh,
+                           lambda_alpha = 0,
                            epochs = 500,
                            lr = 0.001,
                            batch_size = 16,
@@ -1202,7 +1205,7 @@ train_mst_pmdn <- function(inputs,
         outputs_batch <- batch[[2]]
         pred <- model(inputs_batch)
       }
-      loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch)
+      loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch, lambda_alpha = lambda_alpha)
       loss$backward()
       if (!is.null(max_norm)) nn_utils_clip_grad_norm_(model$parameters, max_norm)
       optimizer$step()
@@ -1228,7 +1231,7 @@ train_mst_pmdn <- function(inputs,
             outputs_batch <- batch[[2]]
             pred <- model(inputs_batch)
           }
-          loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch)
+          loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch, lambda_alpha = lambda_alpha)
           total_val_loss <- total_val_loss + loss$item()
           val_batches    <- val_batches + 1
         })
