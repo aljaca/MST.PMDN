@@ -826,7 +826,8 @@ define_mst_pmdn <- function(
 # PMDN skew t-distribution loss function
 # --------------------------------------
 
-loss_mst_pmdn <- function(output, target, nu_switch = 20, lambda_alpha = 0) {
+loss_mst_pmdn <- function(output, target, nu_switch = 20,
+                          lambda_alpha = 0, lambda_nu_inv = 0) {
   # Output must have: pi, mu, scale (Cholesky L), nu, alpha
   # target shape: [B, d]
   pi         <- output$pi         # [B, M]
@@ -881,6 +882,8 @@ loss_mst_pmdn <- function(output, target, nu_switch = 20, lambda_alpha = 0) {
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
   # L2 penalty on final alpha values
   loss <- loss + lambda_alpha * alpha$pow(2)$mean()
+  # (1/nu)^2 penalty on degrees of freedom
+  loss <- loss + lambda_nu_inv * nu$pow(-2)$mean()
   loss
 }
 
@@ -993,6 +996,7 @@ train_mst_pmdn <- function(inputs,
                            jitter = 1e-6,
                            activation = nn_tanh,
                            lambda_alpha = 0,
+                           lambda_nu_inv = 0,
                            epochs = 500,
                            lr = 0.001,
                            batch_size = 16,
@@ -1205,7 +1209,9 @@ train_mst_pmdn <- function(inputs,
         outputs_batch <- batch[[2]]
         pred <- model(inputs_batch)
       }
-      loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch, lambda_alpha = lambda_alpha)
+      loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch,
+                             lambda_alpha = lambda_alpha,
+                             lambda_nu_inv = lambda_nu_inv)
       loss$backward()
       if (!is.null(max_norm)) nn_utils_clip_grad_norm_(model$parameters, max_norm)
       optimizer$step()
@@ -1231,7 +1237,9 @@ train_mst_pmdn <- function(inputs,
             outputs_batch <- batch[[2]]
             pred <- model(inputs_batch)
           }
-          loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch, lambda_alpha = lambda_alpha)
+          loss <- loss_mst_pmdn(pred, outputs_batch, nu_switch = nu_switch,
+                                 lambda_alpha = lambda_alpha,
+                                 lambda_nu_inv = lambda_nu_inv)
           total_val_loss <- total_val_loss + loss$item()
           val_batches    <- val_batches + 1
         })
