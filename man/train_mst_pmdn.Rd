@@ -21,6 +21,7 @@ train_mst_pmdn(
   jitter                 = 1e-6,
   activation             = nn_tanh,
   lambda_alpha           = 0,
+  lambda_nu_inv          = 0,
   epochs                 = 500,
   lr                     = 0.001,
   batch_size             = 16,
@@ -59,6 +60,7 @@ train_mst_pmdn(
   \item{jitter}{Numeric; small ridge added to covariance diagonals for stability.}
   \item{activation}{Activation function for hidden layers (e.g., \code{nn_tanh}, \code{nn_relu}).}
   \item{lambda_alpha}{Numeric; weight of an L2 penalty on the final skewness parameter \code{alpha}.}
+  \item{lambda_nu_inv}{Numeric; weight of a penalty on \code{(1/nu)^2}.}
   \item{epochs}{Integer; maximum number of training epochs.}
   \item{lr}{Numeric; learning rate for the optimizer.}
   \item{batch_size}{Integer; mini-batch size.}

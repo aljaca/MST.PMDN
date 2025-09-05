@@ -339,7 +339,8 @@ The deep MST-PMDN implementation consists of the following key functions and mod
         *   Calculates the skewness adjustment term `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`, where `w` is proportional to `v`, using `t_cdf`.
     *   Combines component log-densities using mixture weights `pi` via `logsumexp`.
     *   Returns the mean NLL over the batch.
-    *   Optionally adds an L2 penalty on the final `alpha` values via `lambda_alpha`.
+    *   Optionally adds an L2 penalty on the final `alpha` values via `lambda_alpha`,
+        and on `(1/nu)^2` via `lambda_nu_inv`.
 
 #### Function: `sample_mst_pmdn(mdn_output, num_samples, ...)`
 
@@ -372,7 +373,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `train_mst_pmdn(...)`
 
 *   **Purpose:** Manages the model training process.
-*   **Method:** Includes data loading, model/optimizer setup (with k-means init), training loop (loss calculation, backpropagation, optimization), validation, learning rate scheduling, checkpointing, and early stopping. Handles optional image inputs correctly and allows weighting an L2 penalty on `alpha` through `lambda_alpha`.
+*   **Method:** Includes data loading, model/optimizer setup (with k-means init), training loop (loss calculation, backpropagation, optimization), validation, learning rate scheduling, checkpointing, and early stopping. Handles optional image inputs correctly and allows weighting an L2 penalty on `alpha` through `lambda_alpha` and on `(1/nu)^2` through `lambda_nu_inv`.
 *   **Output:** Trained model, loss history, and training/validation indices.
 
 #### Function: `predict_mst_pmdn(model, new_inputs, ...)`
