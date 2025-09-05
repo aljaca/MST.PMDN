@@ -43,7 +43,7 @@ remotes::install_github("aljaca/MST.PMDN")
 or
 
 ```r
-install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.0.tar.gz")
+install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.1.tar.gz")
 ```
 
 ## Example
