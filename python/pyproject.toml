@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mst-pmdn"
+version = "0.1.0"
+description = "PyTorch companion implementation of the MST-PMDN model"
+authors = [{name = "MST-PMDN maintainers"}]
+dependencies = ["torch"]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
