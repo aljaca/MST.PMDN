@@ -14,7 +14,6 @@ train_mst_pmdn(
   constant_attr          = "",
   fixed_nu               = NULL,
   range_nu               = c(3, 50),
-  nu_switch              = 20,
   max_alpha              = 2.5,
   min_vol_shape          = 1e-2,
   min_mix_weight         = 1e-4,
@@ -53,7 +52,6 @@ train_mst_pmdn(
   \item{constant_attr}{Character; flags for parameters held constant ("m" for means, "x" for mixing coefficients, "L" for volume, "A" for shape, "D" for orientation, "n" for degrees of freedom \code{nu}, and "s" for skew).}
   \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}; if non-\code{NULL}, fixes degrees of freedom \code{nu} per component.}
   \item{range_nu}{Numeric vector of length 2: clamp range for \code{nu}.}
-  \item{nu_switch}{Numeric; \code{nu} threshold for switching between fast vs slow CDF routines.}
   \item{max_alpha}{Numeric; maximum absolute skewness parameter.}
   \item{min_vol_shape}{Numeric; minimum allowed volume (L) and shape (A) diagonal values.}
   \item{min_mix_weight}{Numeric; minimum mixture weight per component.}

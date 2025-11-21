@@ -303,7 +303,6 @@ fit <- train_mst_pmdn(
   fixed_nu = fixed_nu,
   activation = nn_relu,
   range_nu = c(3., 50.),
-  nu_switch = 20.,
   max_alpha = 5.,
   min_vol_shape = 0.01,
   jitter = 1e-4,
