@@ -280,11 +280,11 @@ Output from a more complete example using an extended dataset at the same locati
 
 The deep MST-PMDN implementation consists of the following key functions and modules:
 
-#### Function: `t_cdf(z, nu, nu_switch = 20)`
+#### Function: `t_cdf(z, nu)`
 
-*   **Purpose:** Calculates a differentiable *approximation* of the univariate Student's t cumulative distribution function (CDF).
-*   **Method:** For `nu >= nu_switch`, transforms the input quantile `z` using a scaling factor derived from the degrees of freedom `nu`, then computes the standard normal CDF of the result using the error function (`erf`). Otherwise, uses `pt` from R and manually inserts a gradient for `z` into the computation graph and uses a finite difference approximation for `nu`. Alternatively, can numerically integrate a torch-compatible probability density function `t_pdf_int`, which will be faster on GPUs.
-*   **Context:** Switches between the fast approximation and the slow `pt` (or numerical integration) calculation. Essential for the loss function's skewness calculation.
+*   **Purpose:** Calculates a differentiable approximation of the univariate Student's t cumulative distribution function (CDF).
+*   **Method:** Uses the Li–De Moor corrected normal approximation for `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases. Fully torch-compatible for use in autograd graphs.
+*   **Context:** Used within the loss function's skewness calculation to provide a fast, differentiable Student t CDF without switching between multiple implementations.
 
 #### Function: `sample_gamma(shape, scale, device)`
 
