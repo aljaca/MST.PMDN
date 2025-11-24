@@ -40,12 +40,6 @@ While it can be used for model-based density estimation and clustering tasks, th
 remotes::install_github("aljaca/MST.PMDN")
 ```
 
-or
-
-```r
-install.packages("https://github.com/aljaca/MST.PMDN/archive/refs/tags/v0.1.1.tar.gz")
-```
-
 ## Example
 
 ```r
