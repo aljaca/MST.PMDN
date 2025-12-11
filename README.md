@@ -376,8 +376,17 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Method:** Runs a forward pass on new inputs in evaluation mode (`torch_no_grad()`).
 *   **Output:** Raw model output list containing mixture parameters for the new inputs.
 
+#### Function: `scov_mst_pmdn(pred, type = c("cov", "scale_chol"), ...)`
 
-## References 
+*   **Purpose:** Converts the volume-shape-orientation decomposition (`L`, `A`, `D`) from `predict_mst_pmdn` into full
+    covariance matrices or their Cholesky factors for each mixture component.
+*   **Method:** Reconstructs the scale matrix via `L^{1/2} * D * sqrt(A)` and optionally computes the Cholesky factor of the
+    resulting covariance.
+*   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]` containing covariance matrices or
+    Cholesky factors.
+
+
+## References
 
 Ambrogioni, L., Güçlü, U., van Gerven, M. A., & Maris, E. (2017). The kernel mixture network: A nonparametric method for conditional density estimation of continuous random variables. arXiv:1705.07111. 
  
