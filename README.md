@@ -379,7 +379,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `scov_mst_pmdn(pred, type = c("cov", "scale_chol"), ...)`
 
 *   **Purpose:** Converts the volume-shape-orientation decomposition (`L`, `A`, `D`) from `predict_mst_pmdn` into full
-    covariance matrices or their Cholesky factors for each mixture component.
+    scale or covariance matrices or their Cholesky factors for each mixture component.
 *   **Method:** Reconstructs the scale matrix via `L^{1/2} * D * sqrt(A)` and optionally computes the Cholesky factor of the
     resulting covariance.
 *   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]` containing covariance matrices or
