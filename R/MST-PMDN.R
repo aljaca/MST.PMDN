@@ -184,7 +184,7 @@ define_mst_pmdn <- function(
   image_module = NULL,
   tabular_module = NULL,
   fixed_nu = NULL,
-  range_nu = c(3., 50.),    # clamp nu range
+  range_nu = c(3., 500.),    # clamp nu range
   max_alpha = 2.5,          # alpha = [-max_alpha, max_alpha]
   min_vol_shape = 1e-2,     # clamps on L_val and A_diag
   min_mix_weight = 1e-4,    # clamp on min component weight
@@ -856,7 +856,7 @@ train_mst_pmdn <- function(inputs,
                            constraint = "VVVNN",
                            constant_attr = "",
                            fixed_nu = NULL,
-                           range_nu = c(3., 50.),
+                           range_nu = c(3., 500.),
                            max_alpha = 2.5,
                            min_vol_shape = 1e-2,
                            min_mix_weight = 1e-4,

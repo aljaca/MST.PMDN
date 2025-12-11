@@ -149,7 +149,7 @@ model_fit <- train_mst_pmdn(
   outputs = outputs,
   hidden_dim = hidden_dim,
   activation = c(nn_relu, nn_relu, nn_tanh),
-  range_nu = c(3., 50.),
+  range_nu = c(3., 500.),
   max_alpha = 5.,
   min_vol_shape = 1e-2,
   jitter = 1e-6,

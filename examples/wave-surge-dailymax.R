@@ -268,7 +268,7 @@ modelname <- "VVI"
 skewtname <- "FN"
 constant_attr <- ""
 n_mixtures <- 2
-fixed_nu <- c(rep(50, n_mixtures - 1), NA)
+fixed_nu <- c(rep(500, n_mixtures - 1), NA)
 
 cat(modelname, skewtname, constant_attr, n_mixtures, "\n")
 
@@ -302,7 +302,7 @@ fit <- train_mst_pmdn(
   constant_attr = constant_attr,
   fixed_nu = fixed_nu,
   activation = nn_relu,
-  range_nu = c(3., 50.),
+  range_nu = c(3., 500.),
   max_alpha = 5.,
   min_vol_shape = 0.01,
   jitter = 1e-4,
@@ -451,11 +451,11 @@ for(i in seq(ncol(y_test))) {
 
 dev.next()
 plot(as.Date(date[test_split]), pred$nu[, n_mixtures],
-     xlab = "Year", ylab = expression(nu), ylim=c(0, 51), type = "p",
+     xlab = "Year", ylab = expression(nu), ylim=c(0, 510), type = "p",
      pch = 15, col = scales::alpha("blue", 0.5))
 grid()
 abline(h = 3, col = "red")
-abline(h = 50, col = "black")
+abline(h = 500, col = "black")
 abline(h = 30, col = "dark blue", lty = 2)
 
 ##

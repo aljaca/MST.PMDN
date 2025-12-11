@@ -215,8 +215,8 @@ image_mod <- image_module(
 hidden_dim <- c(64, 32) # Hidden nodes in fusion network
 drop_hidden <- 0.1      # Dropout for fusion network
 n_mixtures <- 2         # 2 components in the MST mixture model
-constraint <- "VVIFN"   # LAD = "V"ariable-"V"ariable-"I"dentity; nu = 1 component "F"ixed; skewness = "N"ormal 
-fixed_nu <- c(50, NA)   # nu = 50 for 1st component (i.e., approximately "N"ormal); "V"ariable for 2nd
+constraint <- "VVIFN"   # LAD = "V"ariable-"V"ariable-"I"dentity; nu = 1 component "F"ixed; skewness = "N"ormal
+fixed_nu <- c(500, NA)  # nu = 500 for 1st component (i.e., approximately "N"ormal); "V"ariable for 2nd
 constant_attr <- ""     # All non-normal component attributes are free to vary with covariates
 wd_tabular <- 0         # Weight decay for tabular module
 wd_image <- 0.01        # Weight decay for image module
@@ -258,7 +258,7 @@ print(pred$pi[1:3, ])
 print(pred$mu[1:3, , ])
 print(pred$nu[1:3, ])
 
-# Draw samples 
+# Draw samples
 df_samples <- sample_mst_pmdn_df(
   pred,
   num_samples = 1,
@@ -266,6 +266,8 @@ df_samples <- sample_mst_pmdn_df(
 )
 print(head(df_samples))
 ```
+
+Degrees of freedom estimates are clamped by default to `range_nu = c(3, 500)` so the Li–De Moor normal approximation used in the tails remains accurate; adjust this range if you need a tighter or looser bound.
 
 Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf),
 [here](examples/wave-surge-dailymax.VVIFN2.testing.pdf), and [here](examples/extreme-cases_wave-surge-dailymax.VVIFN2.testing.pdf).
