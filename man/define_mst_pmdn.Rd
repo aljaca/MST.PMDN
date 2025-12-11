@@ -18,7 +18,7 @@ define_mst_pmdn(
   image_module    = NULL,
   tabular_module  = NULL,
   fixed_nu        = NULL,
-  range_nu        = c(3, 50),
+  range_nu        = c(3, 500),
   max_alpha       = 2.5,
   min_vol_shape   = 1e-2,
   min_mix_weight  = 1e-4,
@@ -37,7 +37,7 @@ define_mst_pmdn(
   \item{image_module}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
   \item{tabular_module}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
   \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. If non-\code{NULL}, fixes degrees of freedom for each component.}
-  \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}.}
+  \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}. Defaults to \code{c(3, 500)} to allow a tighter normal approximation in the tails.}
   \item{max_alpha}{Numeric. Absolute bound for skewness parameter.}
   \item{min_vol_shape}{Numeric. Minimum allowed value for volume (L) and shape (A) diagonal parameters.}
   \item{min_mix_weight}{Numeric. Floor for each mixture weight to avoid zero probabilities.}
