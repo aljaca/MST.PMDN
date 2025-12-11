@@ -1252,4 +1252,42 @@ predict_mst_pmdn <- function(model, new_inputs, image_inputs = NULL,
   }
 }
 
+scov_mst_pmdn <- function(pred, type = c("cov", "scale_chol"),
+                          as_array = FALSE) {
+  # Compute scale or covariance matrix for each component
+  # from list returned by predict_mst_pmdn
+  # type: "cov" for covariance, "scale_chol" for its Cholesky factor
+  # as_array: TRUE to return an R array instead of a torch_tensor
+  type <- match.arg(type)
+  L_val    <- pred$L      # [B, M, 1, 1]   (volume)
+  A_diag   <- pred$A      # [B, M, d]      (shape, diagonal)
+  D_tensor <- pred$D      # [B, M, d, d]   (orientation)
+  device <- L_val$device
+  A_diag   <- A_diag$to(device = device)
+  D_tensor <- D_tensor$to(device = device)
+  B <- L_val$size(1)
+  M <- L_val$size(2)
+  d <- A_diag$size(3)
+  L_val  <- torch_clamp(L_val,  min = 1e-12)
+  A_diag <- torch_clamp(A_diag, min = 1e-12)
+  lambda_half <- torch_sqrt(L_val)                # [B, M, 1, 1]
+  sqrtA       <- torch_sqrt(A_diag)               # [B, M, d]
+  sqrtA_mats  <- torch_diag_embed(sqrtA)          # [B, M, d, d]
+  # Cholesky-like factor from LAD
+  L_direct <- torch_matmul(D_tensor, sqrtA_mats)  # [B, M, d, d]
+  L_direct <- lambda_half * L_direct              # [B, M, d, d]
+  # Scale or covariance matrix
+  Sigma <- torch_matmul(L_direct,
+                        L_direct$transpose(-2L, -1L))  # [B, M, d, d]
+  if (type == "cov") {
+    out <- Sigma
+  } else {  # "scale_chol"
+    out <- linalg_cholesky(Sigma)
+  }
+  if (as_array) {
+    out <- as_array(out$to(device = "cpu"))
+  }
+  out
+}
+
 ################################################################################
