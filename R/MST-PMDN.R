@@ -845,6 +845,77 @@ sample_mst_pmdn_df <- function(mdn_output, num_samples = 1, device = "cpu") {
              comp = factor(comp))
 }
 
+# -------------------------------------------------------
+# Monte Carlo approximation to marginal CDFs via sampling
+# -------------------------------------------------------
+
+cdf_marginal_mst_pmdn <- function(mdn_output,
+                                 x,
+                                 var_index,
+                                 num_samples = 1000,
+                                 device = "cpu",
+                                 seed = NULL) {
+  if (!is.list(mdn_output)) {
+    stop("mdn_output must be a list returned by predict_mst_pmdn.")
+  }
+  required_fields <- c("pi", "mu", "scale_chol", "nu", "alpha")
+  if (!all(required_fields %in% names(mdn_output))) {
+    stop("mdn_output is missing required fields from predict_mst_pmdn.")
+  }
+  if (!is.numeric(num_samples) || length(num_samples) != 1 || num_samples < 1) {
+    stop("num_samples must be a positive integer.")
+  }
+  var_index <- as.integer(var_index)
+  if (length(var_index) == 0 || any(is.na(var_index))) {
+    stop("var_index must contain valid dimension indices.")
+  }
+  d <- mdn_output$mu$size(3)
+  if (any(var_index < 1) || any(var_index > d)) {
+    stop("var_index is out of bounds for output dimensions.")
+  }
+  if (!is.null(seed)) {
+    torch_manual_seed(seed)
+  }
+  B <- mdn_output$pi$size(1)
+  if (!inherits(x, "torch_tensor")) {
+    x_tensor <- torch_tensor(x, device = device, dtype = torch_float())
+  } else {
+    x_tensor <- x$to(device = device, dtype = torch_float())
+  }
+  x_dim <- x_tensor$size()
+  if (length(x_dim) == 0) {
+    x_tensor <- x_tensor$reshape(c(1, 1))$expand(c(B, length(var_index)))
+  } else if (length(x_dim) == 1) {
+    if (x_dim[1] == d) {
+      x_tensor <- x_tensor$reshape(c(1, d))$expand(c(B, d))
+    } else if (x_dim[1] == length(var_index)) {
+      x_tensor <- x_tensor$reshape(c(1, length(var_index)))$
+        expand(c(B, length(var_index)))
+    } else if (x_dim[1] == 1) {
+      x_tensor <- x_tensor$reshape(c(1, 1))$expand(c(B, length(var_index)))
+    } else {
+      stop("x must be a scalar, length d, or length(var_index).")
+    }
+  } else if (length(x_dim) == 2) {
+    if (x_dim[1] != B) {
+      stop("x must have B rows to match batch size.")
+    }
+    if (x_dim[2] != d && x_dim[2] != length(var_index)) {
+      stop("x must have d columns or length(var_index) columns.")
+    }
+  } else {
+    stop("x must be a vector or matrix.")
+  }
+  if (x_tensor$size(2) == d) {
+    x_tensor <- x_tensor[, var_index]
+  }
+  draws <- sample_mst_pmdn(mdn_output, num_samples, device = device)
+  samples <- draws$samples[, , var_index]
+  x_broadcast <- x_tensor$unsqueeze(1)
+  cdf <- (samples <= x_broadcast)$to(dtype = torch_float())$mean(dim = 1)
+  cdf
+}
+
 # -------------------------------------------------
 # Monte Carlo marginal quantiles from MST-PMDN
 # -------------------------------------------------

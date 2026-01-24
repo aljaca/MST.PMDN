@@ -31,3 +31,6 @@ estimate the desired marginal quantiles.
 An array of shape \code{c(batch_size, length(var_index), length(probs))} with
 dimension names \code{batch}, \code{var}, and \code{prob}.
 }
+\seealso{
+\code{\link{cdf_marginal_mst_pmdn}}, \code{\link{sample_mst_pmdn}}
+}
