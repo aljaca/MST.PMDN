@@ -267,6 +267,14 @@ df_samples <- sample_mst_pmdn_df(
 print(head(df_samples))
 ```
 
+Mixture marginal CDFs for a response dimension \(y_j\) take the form
+\(F(y_j) = \sum_{k=1}^G \pi_k F_{k,j}(y_j)\), where \(F_{k,j}\) is the univariate skew-t
+CDF implied by component \(k\). These component marginals do not have a closed-form CDF
+in general, so the package recommends Monte Carlo estimation via
+`cdf_marginal_mst_pmdn()` and `quantile_marginal_mst_pmdn()`, which draw from the mixture
+to approximate marginal probabilities and quantiles. Note that component quantiles do not
+combine linearly: the mixture quantile is not the weighted sum of component quantiles.
+
 Degrees of freedom estimates are clamped by default to `range_nu = c(3, 500)` so the Li–De Moor normal approximation used in the tails remains accurate; adjust this range if you need a tighter or looser bound.
 
 Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf),
@@ -365,6 +373,23 @@ The deep MST-PMDN implementation consists of the following key functions and mod
     *  `row` - the index (`1..B`) of the predictor row that generated the draw;  
     *  `draw` - the draw number (`1..num_samples`) for that predictor row;  
     *  `comp` - a factor giving the 1-based component label (`1..G`).  
+
+#### Function: `cdf_marginal_mst_pmdn(mdn_output, y, dim, ...)`
+
+*   **Purpose:** Estimates the marginal CDF for a selected response dimension.
+*   **Method:** Uses Monte Carlo sampling from the mixture to approximate
+    \(F(y_j) = \sum_{k=1}^G \pi_k F_{k,j}(y_j)\), because the component skew-t marginal
+    CDFs have no closed form in general.
+*   **Context:** Use when you need marginal probabilities for a fitted mixture; see
+    `quantile_marginal_mst_pmdn()` for inverse-CDF summaries.
+
+#### Function: `quantile_marginal_mst_pmdn(mdn_output, probs, dim, ...)`
+
+*   **Purpose:** Estimates marginal quantiles for a selected response dimension.
+*   **Method:** Uses Monte Carlo sampling to invert the mixture marginal CDF; the mixture
+    quantile is not the weighted sum of component quantiles.
+*   **Context:** Use when summarizing predictive distributions; pairs naturally with
+    `cdf_marginal_mst_pmdn()` for probability and quantile summaries.
 
 #### Function: `train_mst_pmdn(...)`
 
