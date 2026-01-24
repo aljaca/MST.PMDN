@@ -917,6 +917,59 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
 }
 
 # -------------------------------------------------
+# Monte Carlo marginal quantiles from MST-PMDN
+# -------------------------------------------------
+
+quantile_marginal_mst_pmdn <- function(mdn_output,
+                                       probs,
+                                       var_index = NULL,
+                                       num_samples = 1000,
+                                       device = "cpu",
+                                       seed = NULL) {
+  if (!is.numeric(probs) || any(probs < 0 | probs > 1)) {
+    stop("probs must be a numeric vector with values between 0 and 1.")
+  }
+  if (is.null(var_index)) {
+    var_index <- seq_len(mdn_output$mu$size(3))
+  }
+  if (!is.numeric(var_index) || any(var_index < 1)) {
+    stop("var_index must be a numeric vector of positive indices.")
+  }
+  if (!is.null(seed)) {
+    set.seed(seed)
+    if (exists("torch_manual_seed", mode = "function")) {
+      torch_manual_seed(seed)
+    }
+  }
+  draws <- sample_mst_pmdn(mdn_output,
+                           num_samples = num_samples,
+                           device = device)$samples
+  draws <- draws$to(device = "cpu")
+  arr <- as.array(draws)
+  B <- dim(arr)[2]
+  V <- length(var_index)
+  P <- length(probs)
+  out <- array(NA_real_, dim = c(B, V, P),
+               dimnames = list(batch = seq_len(B),
+                               var = var_index,
+                               prob = probs))
+  for (v in seq_along(var_index)) {
+    j <- var_index[v]
+    if (j > dim(arr)[3]) {
+      stop("var_index contains indices larger than the output dimension.")
+    }
+    mat <- arr[, , j]
+    q <- apply(mat, 2, stats::quantile,
+               probs = probs, names = FALSE, type = 7, na.rm = TRUE)
+    if (is.null(dim(q))) {
+      q <- matrix(q, nrow = 1)
+    }
+    out[, v, ] <- t(q)
+  }
+  out
+}
+
+# -------------------------------------------------
 # PMDN training function with optional image inputs
 # -------------------------------------------------
 
