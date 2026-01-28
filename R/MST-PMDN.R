@@ -850,8 +850,8 @@ sample_mst_pmdn_df <- function(mdn_output, num_samples = 1, device = "cpu") {
 # -------------------------------------------------------
 
 cdf_marginal_mst_pmdn <- function(mdn_output,
-                                 x,
-                                 var_index,
+                                 y,
+                                 var_index = NULL,
                                  num_samples = 1000,
                                  device = "cpu",
                                  seed = NULL) {
@@ -865,11 +865,15 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
   if (!is.numeric(num_samples) || length(num_samples) != 1 || num_samples < 1) {
     stop("num_samples must be a positive integer.")
   }
+  d <- mdn_output$mu$size(3)
+  var_index_provided <- !is.null(var_index)
+  if (!var_index_provided) {
+    var_index <- seq_len(d)
+  }
   var_index <- as.integer(var_index)
   if (length(var_index) == 0 || any(is.na(var_index))) {
     stop("var_index must contain valid dimension indices.")
   }
-  d <- mdn_output$mu$size(3)
   if (any(var_index < 1) || any(var_index > d)) {
     stop("var_index is out of bounds for output dimensions.")
   }
@@ -877,10 +881,10 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
     torch_manual_seed(seed)
   }
   B <- mdn_output$pi$size(1)
-  if (!inherits(x, "torch_tensor")) {
-    x_tensor <- torch_tensor(x, device = device, dtype = torch_float())
+  if (!inherits(y, "torch_tensor")) {
+    x_tensor <- torch_tensor(y, device = device, dtype = torch_float())
   } else {
-    x_tensor <- x$to(device = device, dtype = torch_float())
+    x_tensor <- y$to(device = device, dtype = torch_float())
   }
   x_dim <- x_tensor$size()
   if (length(x_dim) == 0) {
@@ -894,17 +898,17 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
     } else if (x_dim[1] == 1) {
       x_tensor <- x_tensor$reshape(c(1, 1))$expand(c(B, length(var_index)))
     } else {
-      stop("x must be a scalar, length d, or length(var_index).")
+      stop("y must be a scalar, length d, or length(var_index).")
     }
   } else if (length(x_dim) == 2) {
     if (x_dim[1] != B) {
-      stop("x must have B rows to match batch size.")
+      stop("y must have B rows to match batch size.")
     }
     if (x_dim[2] != d && x_dim[2] != length(var_index)) {
-      stop("x must have d columns or length(var_index) columns.")
+      stop("y must have d columns or length(var_index) columns.")
     }
   } else {
-    stop("x must be a vector or matrix.")
+    stop("y must be a vector or matrix.")
   }
   if (x_tensor$size(2) == d) {
     x_tensor <- x_tensor[, var_index]
