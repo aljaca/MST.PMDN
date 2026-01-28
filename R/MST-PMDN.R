@@ -854,7 +854,8 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
                                  var_index = NULL,
                                  num_samples = 1000,
                                  device = "cpu",
-                                 seed = NULL) {
+                                 seed = NULL,
+                                 draws = NULL) {
   if (!is.list(mdn_output)) {
     stop("mdn_output must be a list returned by predict_mst_pmdn.")
   }
@@ -876,9 +877,6 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
   }
   if (any(var_index < 1) || any(var_index > d)) {
     stop("var_index is out of bounds for output dimensions.")
-  }
-  if (!is.null(seed)) {
-    torch_manual_seed(seed)
   }
   B <- mdn_output$pi$size(1)
   if (!inherits(y, "torch_tensor")) {
@@ -913,8 +911,38 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
   if (x_tensor$size(2) == d) {
     x_tensor <- x_tensor[, var_index]
   }
-  draws <- sample_mst_pmdn(mdn_output, num_samples, device = device)
-  samples <- draws$samples[, , var_index]
+  if (!is.null(draws)) {
+    if (is.list(draws) && !is.null(draws$samples)) {
+      draws <- draws$samples
+    }
+    if (!inherits(draws, "torch_tensor")) {
+      if (!is.array(draws)) {
+        stop("draws must be a torch tensor, array, or list with a samples entry.")
+      }
+      draws <- torch_tensor(draws, device = device, dtype = torch_float())
+    } else {
+      draws <- draws$to(device = device, dtype = torch_float())
+    }
+    if (length(draws$size()) != 3) {
+      stop("draws must have three dimensions (num_samples x batch x output_dim).")
+    }
+    if (draws$size(2) != B) {
+      stop("draws must have the same batch size as mdn_output.")
+    }
+    if (draws$size(3) != d) {
+      stop("draws must have the same output dimension as mdn_output.")
+    }
+    samples <- draws[, , var_index]
+  } else {
+    if (!is.null(seed)) {
+      set.seed(seed)
+      if (exists("torch_manual_seed", mode = "function")) {
+        torch_manual_seed(seed)
+      }
+    }
+    draws <- sample_mst_pmdn(mdn_output, num_samples, device = device)
+    samples <- draws$samples[, , var_index]
+  }
   x_broadcast <- x_tensor$unsqueeze(1)
   counts <- (samples <= x_broadcast)$to(dtype = torch_float())$sum(dim = 1)
   n_draws <- samples$size(1)
@@ -935,7 +963,8 @@ quantile_marginal_mst_pmdn <- function(mdn_output,
                                        var_index = NULL,
                                        num_samples = 1000,
                                        device = "cpu",
-                                       seed = NULL) {
+                                       seed = NULL,
+                                       draws = NULL) {
   probs_is_torch <- inherits(probs, "torch_tensor")
   probs_matrix <- probs
   if (probs_is_torch) {
@@ -954,21 +983,45 @@ quantile_marginal_mst_pmdn <- function(mdn_output,
   if (!is.numeric(var_index) || any(var_index < 1)) {
     stop("var_index must be a numeric vector of positive indices.")
   }
-  if (!is.null(seed)) {
-    set.seed(seed)
-    if (exists("torch_manual_seed", mode = "function")) {
-      torch_manual_seed(seed)
+  if (!is.null(draws)) {
+    if (is.list(draws) && !is.null(draws$samples)) {
+      draws <- draws$samples
     }
+    if (!inherits(draws, "torch_tensor")) {
+      if (!is.array(draws)) {
+        stop("draws must be a torch tensor, array, or list with a samples entry.")
+      }
+      arr <- draws
+    } else {
+      draws <- draws$to(device = "cpu")
+      arr <- as.array(draws)
+    }
+    if (length(dim(arr)) != 3) {
+      stop("draws must have three dimensions (num_samples x batch x output_dim).")
+    }
+  } else {
+    if (!is.null(seed)) {
+      set.seed(seed)
+      if (exists("torch_manual_seed", mode = "function")) {
+        torch_manual_seed(seed)
+      }
+    }
+    draws <- sample_mst_pmdn(mdn_output,
+                             num_samples = num_samples,
+                             device = device)$samples
+    draws <- draws$to(device = "cpu")
+    arr <- as.array(draws)
   }
-  draws <- sample_mst_pmdn(mdn_output,
-                           num_samples = num_samples,
-                           device = device)$samples
-  draws <- draws$to(device = "cpu")
-  arr <- as.array(draws)
   B <- dim(arr)[2]
   V <- length(var_index)
   if (nrow(probs_matrix) != B) {
     stop("probs must have the same number of rows as the batch size.")
+  }
+  if (dim(arr)[2] != mdn_output$pi$size(1)) {
+    stop("draws must have the same batch size as mdn_output.")
+  }
+  if (dim(arr)[3] != mdn_output$mu$size(3)) {
+    stop("draws must have the same output dimension as mdn_output.")
   }
   if (any(var_index > dim(arr)[3])) {
     stop("var_index contains indices larger than the output dimension.")

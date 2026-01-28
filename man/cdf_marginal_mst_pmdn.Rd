@@ -2,7 +2,15 @@
 \alias{cdf_marginal_mst_pmdn}
 \title{Monte Carlo estimation of marginal CDFs for MST-PMDN mixtures}
 \usage{
-cdf_marginal_mst_pmdn(mdn_output, y, var_index = NULL, num_samples = 1000, device = "cpu")
+cdf_marginal_mst_pmdn(
+  mdn_output,
+  y,
+  var_index = NULL,
+  num_samples = 1000,
+  device = "cpu",
+  seed = NULL,
+  draws = NULL
+)
 }
 \arguments{
   \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} containing mixture parameters.}
@@ -10,6 +18,8 @@ cdf_marginal_mst_pmdn(mdn_output, y, var_index = NULL, num_samples = 1000, devic
   \item{var_index}{Integer; indices of the response dimensions to evaluate. Defaults to all output dimensions.}
   \item{num_samples}{Integer; number of Monte Carlo draws used to approximate the marginal CDF.}
   \item{device}{Character; a \pkg{torch} device on which to perform sampling (e.g. \code{"cpu"} or \code{"cuda"}).}
+  \item{seed}{Optional integer; random seed for reproducible Monte Carlo draws.}
+  \item{draws}{Optional precomputed draws as a \pkg{torch} tensor, array, or list with a \code{samples} entry (e.g. the output of \code{\link{sample_mst_pmdn}}). When provided, sampling is skipped.}
 }
 \description{
 Approximates the marginal CDF for a selected response dimension using Monte Carlo draws from
@@ -23,6 +33,9 @@ response dimension \eqn{j}. The component skew-t marginals do not have closed-fo
 general, so Monte Carlo estimation is recommended. The helper draws from the mixture (via
 \code{\link{sample_mst_pmdn}}) and estimates \eqn{F(y_j)} by the empirical proportion of samples
 below \eqn{y_j}.
+
+For comparable results across chained sampling-based summaries, either pass the same
+\code{seed} to each call or reuse identical \code{draws}.
 }
 \value{
 A numeric vector of estimated marginal CDF values, aligned with \code{y}.
