@@ -274,16 +274,6 @@ qq <- quantile_marginal_mst_pmdn(pred, tt)
 print(head(qq))
 ```
 
-Mixture marginal CDFs for a response dimension \(y_j\) take the form
-\(F(y_j) = \sum_{k=1}^G \pi_k F_{k,j}(y_j)\), where \(F_{k,j}\) is the univariate skew-t
-CDF implied by component \(k\). These component marginals do not have a closed-form CDF
-in general, so the package recommends Monte Carlo estimation via
-`cdf_marginal_mst_pmdn()` and `quantile_marginal_mst_pmdn()`, which draw from the mixture
-to approximate marginal probabilities and quantiles. Note that component quantiles do not
-combine linearly: the mixture quantile is not the weighted sum of component quantiles.
-
-Degrees of freedom estimates are clamped by default to `range_nu = c(3, 500)` so the Li–De Moor normal approximation used in the tails remains accurate; adjust this range if you need a tighter or looser bound.
-
 Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf),
 [here](examples/wave-surge-dailymax.VVIFN2.testing.pdf), and [here](examples/extreme-cases_wave-surge-dailymax.VVIFN2.testing.pdf).
 
