@@ -926,10 +926,19 @@ quantile_marginal_mst_pmdn <- function(mdn_output,
                                        num_samples = 1000,
                                        device = "cpu",
                                        seed = NULL) {
-  if (!is.numeric(probs) || any(probs < 0 | probs > 1)) {
-    stop("probs must be a numeric vector with values between 0 and 1.")
+  probs_is_torch <- inherits(probs, "torch_tensor")
+  probs_matrix <- probs
+  if (probs_is_torch) {
+    probs_matrix <- as.array(probs$to(device = "cpu"))
   }
-  if (is.null(var_index)) {
+  if (!is.matrix(probs_matrix)) {
+    stop("probs must be a numeric matrix or torch tensor with shape B x V.")
+  }
+  if (!is.numeric(probs_matrix) || any(probs_matrix < 0 | probs_matrix > 1, na.rm = TRUE)) {
+    stop("probs must be numeric with all values in [0, 1].")
+  }
+  var_index_provided <- !is.null(var_index)
+  if (!var_index_provided) {
     var_index <- seq_len(mdn_output$mu$size(3))
   }
   if (!is.numeric(var_index) || any(var_index < 1)) {
@@ -948,23 +957,42 @@ quantile_marginal_mst_pmdn <- function(mdn_output,
   arr <- as.array(draws)
   B <- dim(arr)[2]
   V <- length(var_index)
-  P <- length(probs)
-  out <- array(NA_real_, dim = c(B, V, P),
-               dimnames = list(batch = seq_len(B),
-                               var = var_index,
-                               prob = probs))
-  for (v in seq_along(var_index)) {
-    j <- var_index[v]
-    if (j > dim(arr)[3]) {
-      stop("var_index contains indices larger than the output dimension.")
+  if (nrow(probs_matrix) != B) {
+    stop("probs must have the same number of rows as the batch size.")
+  }
+  if (any(var_index > dim(arr)[3])) {
+    stop("var_index contains indices larger than the output dimension.")
+  }
+  if (var_index_provided && ncol(probs_matrix) != length(var_index)) {
+    stop("When provided, var_index must have the same length as ncol(probs).")
+  }
+  if (!var_index_provided && ncol(probs_matrix) != dim(arr)[3]) {
+    stop("When var_index is NULL, ncol(probs) must match the output dimension.")
+  }
+  arr <- arr[, , var_index, drop = FALSE]
+  compute_quantile <- function(samples, p) {
+    samples <- samples[!is.na(samples)]
+    n <- length(samples)
+    if (n == 0) {
+      return(NA_real_)
     }
-    mat <- arr[, , j]
-    q <- apply(mat, 2, stats::quantile,
-               probs = probs, names = FALSE, type = 7, na.rm = TRUE)
-    if (is.null(dim(q))) {
-      q <- matrix(q, nrow = 1)
+    sorted_samples <- sort(samples)
+    position <- (n - 1) * p + 1
+    lower <- floor(position)
+    upper <- ceiling(position)
+    if (lower == upper) {
+      sorted_samples[lower]
+    } else {
+      weight <- position - lower
+      (1 - weight) * sorted_samples[lower] + weight * sorted_samples[upper]
     }
-    out[, v, ] <- t(q)
+  }
+  out <- matrix(NA_real_, nrow = B, ncol = V,
+                dimnames = list(batch = seq_len(B), var = var_index))
+  for (b in seq_len(B)) {
+    for (v in seq_len(V)) {
+      out[b, v] <- compute_quantile(arr[, b, v], probs_matrix[b, v])
+    }
   }
   out
 }
