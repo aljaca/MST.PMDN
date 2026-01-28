@@ -265,6 +265,13 @@ df_samples <- sample_mst_pmdn_df(
   device = device
 )
 print(head(df_samples))
+
+# Evaluate CDF and quantiles
+tt <- cdf_marginal_mst_pmdn(pred, y)
+print(head(tt))
+
+qq <- quantile_marginal_mst_pmdn(pred, tt)
+print(head(qq))
 ```
 
 Mixture marginal CDFs for a response dimension \(y_j\) take the form
@@ -383,9 +390,9 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Context:** Use when you need marginal probabilities for a fitted mixture; see
     `quantile_marginal_mst_pmdn()` for inverse-CDF summaries.
 
-#### Function: `quantile_marginal_mst_pmdn(mdn_output, probs, dim, ...)`
+#### Function: `quantile_marginal_mst_pmdn(mdn_output, probs, var_index = NULL, ...)`
 
-*   **Purpose:** Estimates marginal quantiles for a selected response dimension.
+*   **Purpose:** Estimates marginal quantiles for one of more response dimensions.
 *   **Method:** Uses Monte Carlo sampling to invert the mixture marginal CDF; the mixture
     quantile is not the weighted sum of component quantiles.
 *   **Context:** Use when summarizing predictive distributions; pairs naturally with
