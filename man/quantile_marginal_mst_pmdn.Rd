@@ -13,7 +13,7 @@ quantile_marginal_mst_pmdn(
 }
 \arguments{
   \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} or a forward pass of an \code{mst_pmdn_model}, containing at minimum the following named \code{\link[torch]{torch_tensor}} elements: \code{pi}, \code{mu}, \code{scale_chol}, \code{nu}, and \code{alpha}.}
-  \item{probs}{Numeric vector of probabilities in \eqn{[0, 1]} for which to compute quantiles.}
+  \item{probs}{Numeric matrix or \pkg{torch} tensor with shape \eqn{B \times V} containing probabilities in \eqn{[0, 1]} for each batch item and output dimension.}
   \item{var_index}{Integer vector of output dimension indices to summarize. Defaults to all output dimensions.}
   \item{num_samples}{Integer; number of Monte Carlo draws per input case. Defaults to \code{1000}.}
   \item{device}{Character; a \pkg{torch} device on which to perform sampling (e.g. \code{"cpu"} or \code{"cuda"}). Defaults to \code{"cpu"}.}
@@ -28,8 +28,8 @@ component-wise quantiles. This function therefore uses Monte Carlo sampling to
 estimate the desired marginal quantiles.
 }
 \value{
-An array of shape \code{c(batch_size, length(var_index), length(probs))} with
-dimension names \code{batch}, \code{var}, and \code{prob}.
+A numeric matrix of shape \eqn{B \times V} (batch size by output dimension),
+aligned with the columns of \code{probs} and \code{var_index}.
 }
 \seealso{
 \code{\link{cdf_marginal_mst_pmdn}}, \code{\link{sample_mst_pmdn}}
