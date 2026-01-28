@@ -916,7 +916,13 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
   draws <- sample_mst_pmdn(mdn_output, num_samples, device = device)
   samples <- draws$samples[, , var_index]
   x_broadcast <- x_tensor$unsqueeze(1)
-  cdf <- (samples <= x_broadcast)$to(dtype = torch_float())$mean(dim = 1)
+  counts <- (samples <= x_broadcast)$to(dtype = torch_float())$sum(dim = 1)
+  n_draws <- samples$size(1)
+  if (n_draws == 1) {
+    cdf <- counts
+  } else {
+    cdf <- ((counts - 1) / (n_draws - 1))$clamp(min = 0, max = 1)
+  }
   cdf
 }
 
