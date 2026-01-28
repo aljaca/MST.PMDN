@@ -259,18 +259,18 @@ print(pred$mu[1:3, , ])
 print(pred$nu[1:3, ])
 
 # Draw samples
-df_samples <- sample_mst_pmdn_df(
+samples <- sample_mst_pmdn(
   pred,
-  num_samples = 1,
+  num_samples = 1000,
   device = device
 )
-print(head(df_samples))
+print(head(samples))
 
 # Evaluate CDF and quantiles
-tt <- cdf_marginal_mst_pmdn(pred, y)
+tt <- cdf_marginal_mst_pmdn(pred, y, draws = samples)
 print(head(tt))
 
-qq <- quantile_marginal_mst_pmdn(pred, tt)
+qq <- quantile_marginal_mst_pmdn(pred, tt, draws = samples)
 print(head(qq))
 ```
 
