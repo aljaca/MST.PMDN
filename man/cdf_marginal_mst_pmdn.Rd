@@ -2,12 +2,12 @@
 \alias{cdf_marginal_mst_pmdn}
 \title{Monte Carlo estimation of marginal CDFs for MST-PMDN mixtures}
 \usage{
-cdf_marginal_mst_pmdn(mdn_output, y, dim, num_samples = 1000, device = "cpu")
+cdf_marginal_mst_pmdn(mdn_output, y, var_index = NULL, num_samples = 1000, device = "cpu")
 }
 \arguments{
   \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} containing mixture parameters.}
   \item{y}{Numeric vector of response values at which to evaluate the marginal CDF.}
-  \item{dim}{Integer; index of the response dimension to evaluate.}
+  \item{var_index}{Integer; indices of the response dimensions to evaluate. Defaults to all output dimensions.}
   \item{num_samples}{Integer; number of Monte Carlo draws used to approximate the marginal CDF.}
   \item{device}{Character; a \pkg{torch} device on which to perform sampling (e.g. \code{"cpu"} or \code{"cuda"}).}
 }
