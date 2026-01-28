@@ -8,7 +8,8 @@ quantile_marginal_mst_pmdn(
   var_index = NULL,
   num_samples = 1000,
   device = "cpu",
-  seed = NULL
+  seed = NULL,
+  draws = NULL
 )
 }
 \arguments{
@@ -18,6 +19,7 @@ quantile_marginal_mst_pmdn(
   \item{num_samples}{Integer; number of Monte Carlo draws per input case. Defaults to \code{1000}.}
   \item{device}{Character; a \pkg{torch} device on which to perform sampling (e.g. \code{"cpu"} or \code{"cuda"}). Defaults to \code{"cpu"}.}
   \item{seed}{Optional integer; random seed for reproducible Monte Carlo draws.}
+  \item{draws}{Optional precomputed draws as a \pkg{torch} tensor, array, or list with a \code{samples} entry (e.g. the output of \code{\link{sample_mst_pmdn}}). When provided, sampling is skipped.}
 }
 \description{
 Draws Monte Carlo samples from the predictive MST-PMDN mixture distribution and
@@ -26,6 +28,9 @@ sampling-based approximation to the mixture distribution; note that
 the quantile of a mixture distribution is not, in general, the mixture of
 component-wise quantiles. This function therefore uses Monte Carlo sampling to
 estimate the desired marginal quantiles.
+
+For comparable results across chained sampling-based summaries, either pass the same
+\code{seed} to each call or reuse identical \code{draws}.
 }
 \value{
 A numeric matrix of shape \eqn{B \times V} (batch size by output dimension),
