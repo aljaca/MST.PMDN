@@ -173,17 +173,24 @@ image_module <- nn_module(
     conv_channels,
     kernel_size = 3,
     pool_kernel = 2,
-    output_dim = 32
+    output_dim = 32,
+    head_hidden = 64,
+    dropout_rate = 0.2
   ) {
     # Store output dim
     self$output_dim <- output_dim
     # Build conv stack
     self$n_conv <- length(conv_channels)
     self$convs <- nn_module_list()
-    self$bn_conv <- nn_module_list()
+    self$gn_conv <- nn_module_list()
     # Track spatial dim through conv+pool
-    spatial <- img_size
     pad <- floor(kernel_size / 2)
+    group_count <- function(channels) {
+      for (g in c(8, 4, 2, 1)) {
+        if (channels %% g == 0) return(g)
+      }
+      1
+    }
     for (i in seq_along(conv_channels)) {
       in_ch <- if (i == 1) in_channels else conv_channels[i-1]
       out_ch <- conv_channels[i]
@@ -196,29 +203,38 @@ image_module <- nn_module(
           padding = pad
         )
       )
-      self$bn_conv$append(nn_batch_norm2d(out_ch))
-      # Pooling halves spatial dims
-      spatial <- floor(spatial / pool_kernel)
+      self$gn_conv$append(
+        nn_group_norm(num_groups = group_count(out_ch), num_channels = out_ch)
+      )
     }
-    # Store pooling layer and computed flatten_dim
+    # Store pooling, GAP, and MLP head
     self$pool <- nn_max_pool2d(kernel_size = pool_kernel)
-    self$flatten_dim <- tail(conv_channels, 1) * spatial * spatial
-    # Final head: linear( flatten_dim → output_dim ) + BN
-    self$fc    <- nn_linear(self$flatten_dim, output_dim)
-    self$bn_fc <- nn_batch_norm1d(output_dim)
+    self$gap <- nn_adaptive_avg_pool2d(output_size = c(1, 1))
+    last_channels <- tail(conv_channels, 1)
+    self$gn_head <- nn_group_norm(
+      num_groups = group_count(last_channels),
+      num_channels = last_channels
+    )
+    self$fc1 <- nn_linear(last_channels, head_hidden)
+    self$fc2 <- nn_linear(head_hidden, output_dim)
+    self$dropout <- nn_dropout(p = dropout_rate)
   },
   forward = function(x) {
-    # conv → BN → ReLU → pool
+    # conv → GroupNorm → ReLU → pool
     for (i in seq_len(self$n_conv)) {
       x <- self$convs[[i]](x)
-      x <- self$bn_conv[[i]](x)
+      x <- self$gn_conv[[i]](x)
       x <- nnf_relu(x)
       x <- self$pool(x)
     }
-    # Flatten and head
+    # GAP + head MLP
+    x <- self$gap(x)
+    x <- self$gn_head(x)
     x <- torch_flatten(x, start_dim = 2)
-    x <- self$fc(x)
-    nnf_relu(self$bn_fc(x))
+    x <- torch_squeeze(x, dim = 3)
+    x <- nnf_relu(self$fc1(x))
+    x <- self$dropout(x)
+    nnf_relu(self$fc2(x))
   }
 )
 
@@ -236,16 +252,15 @@ tabular_mod <- tabular_module(
 )
 
 ##
-# The ImageModule accepts a 2×32×32 image, applies a 3×3 conv (2→16) with BN, 
-#  ReLU  and 2×2 max-pool (→16×16), repeats with a 16→32 conv + BN, ReLU and 
-# max-pool (→8×8), flattens the 32×8×8 tensor to 2048 units, and then projects
-# it to 32 features via a linear layer, BN, and ReLU. Weight penalty (wd_image)
-# is applied during training.
+# The ImageModule accepts a 2×32×32 image, applies a series of 3×3 convs
+# (2→16→32→64→128) each with GroupNorm, ReLU, and 2×2 max-pool, then performs
+# global average pooling and a small MLP head (with dropout) to project to
+# 32 features. Weight penalty (wd_image) is applied during training.
 
 image_mod <- image_module(
   in_channels = dim(x_image)[2],
   img_size = dim(x_image)[3],
-  conv_channels = c(16, 32),
+  conv_channels = c(16, 32, 64, 128),
   kernel_size = 3,
   pool_kernel = 2,
   output_dim = 32
