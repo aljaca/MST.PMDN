@@ -287,7 +287,6 @@ image_module <- nn_module(
     x <- self$gap(x)
     x <- self$gn_head(x)
     x <- torch_flatten(x, start_dim = 2)
-    x <- torch_squeeze(x, dim = 3)
     x <- nnf_relu(self$fc1(x))
     x <- self$dropout(x)
     nnf_relu(self$fc2(x))
