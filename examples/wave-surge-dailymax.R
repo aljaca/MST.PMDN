@@ -91,6 +91,8 @@ tabular_module <- nn_module(
   initialize = function(
     input_dim,
     hidden_dims,
+    residual_blocks = 0,
+    residual_width = NULL,
     output_dim,
     dropout_rate
   ) {
@@ -111,9 +113,11 @@ tabular_module <- nn_module(
     # Store output size and dropout rate
     self$output_dim <- output_dim
     self$dropout_rate <- dropout_rate
+    self$residual_blocks <- residual_blocks
+    self$residual_width <- residual_width
     # Module lists for linear layers, batch-norms, (optional) dropouts
     self$layers <- nn_module_list()
-    self$bns <- nn_module_list()
+    self$norms <- nn_module_list()
     if (self$dropout_rate > 0) {
       self$dropouts <- nn_module_list()
     }
@@ -125,11 +129,10 @@ tabular_module <- nn_module(
         self$layers$append(
           nn_linear(current_dim, self$hidden_dims[[i]])
         )
-        # Batch normalization on hidden size
-        self$bns$append(
-          nn_batch_norm1d(self$hidden_dims[[i]])
+        # Layer normalization on hidden size
+        self$norms$append(
+          nn_layer_norm(self$hidden_dims[[i]])
         )
-        # Optional dropout after activation
         if (self$dropout_rate > 0) {
           self$dropouts$append(
             nn_dropout(p = self$dropout_rate)
@@ -138,6 +141,39 @@ tabular_module <- nn_module(
         # Update input size for next layer
         current_dim <- self$hidden_dims[[i]]
       }
+    }
+    # Residual MLP blocks (width set to residual_width)
+    if (self$residual_blocks > 0) {
+      if (is.null(self$residual_width)) {
+        self$residual_width <- current_dim
+      }
+      if (current_dim != self$residual_width) {
+        self$residual_proj <- nn_linear(current_dim, self$residual_width)
+        self$residual_norm <- nn_layer_norm(self$residual_width)
+      }
+      self$residual_fc1 <- nn_module_list()
+      self$residual_fc2 <- nn_module_list()
+      self$residual_norms <- nn_module_list()
+      if (self$dropout_rate > 0) {
+        self$residual_dropouts <- nn_module_list()
+      }
+      for (i in seq_len(self$residual_blocks)) {
+        self$residual_fc1$append(
+          nn_linear(self$residual_width, self$residual_width)
+        )
+        self$residual_fc2$append(
+          nn_linear(self$residual_width, self$residual_width)
+        )
+        self$residual_norms$append(
+          nn_layer_norm(self$residual_width)
+        )
+        if (self$dropout_rate > 0) {
+          self$residual_dropouts$append(
+            nn_dropout(p = self$dropout_rate)
+          )
+        }
+      }
+      current_dim <- self$residual_width
     }
     # Final linear layer: last hidden (or input) → output_dim
     self$layers$append(
@@ -148,16 +184,36 @@ tabular_module <- nn_module(
     # Pass through each hidden layer
     for (i in seq_len(self$n_hidden_layers)) {
       x <- self$layers[[i]](x)  # linear
-      x <- self$bns[[i]](x)     # batch-norm
+      x <- self$norms[[i]](x)   # layer-norm
       x <- nnf_relu(x)          # activation
-      # Apply dropout if configured
       if (self$dropout_rate > 0 && !is.null(self$dropouts[[i]])) {
         x <- self$dropouts[[i]](x)
       }
     }
-    # Final projection and activation
+    # Residual MLP blocks
+    if (self$residual_blocks > 0) {
+      if (!is.null(self$residual_proj)) {
+        x <- self$residual_proj(x)
+        x <- self$residual_norm(x)
+        x <- nnf_gelu(x)
+        if (self$dropout_rate > 0) {
+          x <- nnf_dropout(x, p = self$dropout_rate, train = self$training)
+        }
+      }
+      for (i in seq_len(self$residual_blocks)) {
+        residual <- x
+        x <- self$residual_norms[[i]](x)
+        x <- self$residual_fc1[[i]](x)
+        x <- nnf_gelu(x)
+        if (self$dropout_rate > 0 && !is.null(self$residual_dropouts[[i]])) {
+          x <- self$residual_dropouts[[i]](x)
+        }
+        x <- self$residual_fc2[[i]](x)
+        x <- x + residual
+      }
+    }
+    # Final projection (no activation)
     x <- self$layers[[length(self$layers)]](x)
-    x <- nnf_relu(x)
     x
   }
 )
@@ -239,16 +295,17 @@ image_module <- nn_module(
 )
 
 ##
-# The TabularModule takes an input vector of length input_dim, runs it through 
-# two dense layers (input_dim→32 and 32→16) each with batch-norm (BN), ReLU and
-# 50 %  dropout, then applies a final 16→16 linear layer plus ReLU to produce a 
-# 16-dimensional output.
+# The TabularModule takes an input vector of length input_dim, runs it through
+# dense layers with LayerNorm, adds residual MLP blocks, and applies a final
+# linear projection to produce a 16-dimensional output.
 
 tabular_mod <- tabular_module(
   input_dim = ncol(x),
-  hidden_dims = c(32, 16),
+  hidden_dims = c(64),
+  residual_blocks = 3,
+  residual_width = 64,
   output_dim = 16,
-  dropout_rate = 0.5
+  dropout_rate = 0.2
 )
 
 ##
