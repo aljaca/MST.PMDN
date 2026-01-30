@@ -327,10 +327,60 @@ wd_image <- 0.01
 
 ##
 # Dense fusion network that processes concatenated tabular and image features
-# and passes to the MST-PMDN head.
+# and passes to the MST-PMDN head. Gated fusion replaces the default
+# concatenation in train_mst_pmdn.
+
+fusion_module <- nn_module(
+  "FusionModule",
+  initialize = function(
+    tabular_dim,
+    image_dim,
+    fusion_dim = 32,
+    output_dim = 32,
+    head_hidden = 32,
+    dropout_rate = 0.1
+  ) {
+    self$output_dim <- output_dim
+    self$gate_linear <- nn_linear(tabular_dim + image_dim, fusion_dim)
+    self$tab_proj <- nn_linear(tabular_dim, fusion_dim)
+    self$tab_norm <- nn_layer_norm(fusion_dim)
+    self$img_proj <- nn_linear(image_dim, fusion_dim)
+    self$img_norm <- nn_layer_norm(fusion_dim)
+    if (!is.null(head_hidden) && head_hidden > 0) {
+      self$head <- nn_sequential(
+        nn_linear(fusion_dim, head_hidden),
+        nn_layer_norm(head_hidden),
+        nn_relu(),
+        nn_dropout(p = dropout_rate),
+        nn_linear(head_hidden, output_dim)
+      )
+    } else {
+      self$head <- NULL
+    }
+  },
+  forward = function(tabular_features, image_features) {
+    fused_in <- torch_cat(list(tabular_features, image_features), dim = 2)
+    gate <- torch_sigmoid(self$gate_linear(fused_in))
+    tab_proj <- nnf_relu(self$tab_norm(self$tab_proj(tabular_features)))
+    img_proj <- nnf_relu(self$img_norm(self$img_proj(image_features)))
+    fused <- gate * tab_proj + (1 - gate) * img_proj
+    if (!is.null(self$head)) {
+      fused <- self$head(fused)
+    }
+    fused
+  }
+)
 
 hidden_dim <- c(64, 32)
 drop_hidden <- 0.2
+fusion_mod <- fusion_module(
+  tabular_dim = tabular_mod$output_dim,
+  image_dim = image_mod$output_dim,
+  fusion_dim = 32,
+  output_dim = 32,
+  head_hidden = 32,
+  dropout_rate = 0.1
+)
 
 ## MST-MDN head
 # Predicts parameters of the mixture of MST distributions based on outputs
@@ -398,6 +448,7 @@ fit <- train_mst_pmdn(
   image_inputs = x_image,
   image_module = image_mod,
   tabular_module = tabular_mod,
+  fusion_module = fusion_mod,
   device = device
 )
 
