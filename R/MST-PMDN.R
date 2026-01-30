@@ -183,6 +183,7 @@ define_mst_pmdn <- function(
   drop_hidden = 0.,
   image_module = NULL,
   tabular_module = NULL,
+  fusion_module = NULL,
   fixed_nu = NULL,
   range_nu = c(3., 500.),    # clamp nu range
   max_alpha = 2.5,          # alpha = [-max_alpha, max_alpha]
@@ -225,6 +226,7 @@ define_mst_pmdn <- function(
       # Store user arguments
       self$image_module    <- image_module
       self$tabular_module  <- tabular_module
+      self$fusion_module   <- fusion_module
       self$hidden_dims     <- as.integer(hidden_dim)
       self$n_mixtures      <- n_mixtures
       self$output_dim      <- output_dim
@@ -236,54 +238,73 @@ define_mst_pmdn <- function(
       self$min_vol_shape   <- min_vol_shape
       self$min_mix_weight  <- min_mix_weight
       self$jitter          <- jitter
-      # Infer output dimensions from modules
-      # Determine tabular features dimension
-      if (is.null(self$tabular_module)) {
-        tabular_features_dim <- input_dim
-      } else {
-        # Try to infer output dimension from the tabular module
-        tabular_features_dim <- self$get_module_output_dim(
-          self$tabular_module,
-          fallback_input_dim = input_dim,
-          module_name = "tabular_module"
-        )
-      }
-      # Calculate total input dimensions after feature extraction
-      total_input_dim <- tabular_features_dim
-      if (!is.null(self$image_module)) {
-        # Try to infer output dimension from the image module
-        image_out_dim <- self$get_module_output_dim(
-          self$image_module,
-          fallback_input_dim = NULL,
-          module_name = "image_module"
-        )
-        total_input_dim <- total_input_dim + image_out_dim
-      }
-      # Build hidden MLP
-      if (is.function(activation)) {
-        act_funcs <- rep(list(activation), length(self$hidden_dims))
-      } else if (is.list(activation) && length(activation) ==
-                   length(self$hidden_dims)) {
-        act_funcs <- activation
-      } else {
-        stop("activation must match number of hidden layers.")
-      }
-      layers <- list()
-      current_dim <- total_input_dim
-      n_hidden_layers <- length(self$hidden_dims)
-      for (i in seq_len(n_hidden_layers)) {
-        next_dim <- self$hidden_dims[i]
-        layers[[length(layers) + 1]] <- nn_linear(current_dim, next_dim)
-        # Add batch norm and activation except on the final (output) layer
-        if (i < n_hidden_layers) {
-          layers[[length(layers) + 1]] <- nn_batch_norm1d(next_dim)
-          layers[[length(layers) + 1]] <- act_funcs[[i]]()
-          layers[[length(layers) + 1]] <- nn_dropout(p = drop_hidden)
+      if (is.null(self$fusion_module)) {
+        # Infer output dimensions from modules
+        # Determine tabular features dimension
+        if (is.null(self$tabular_module)) {
+          tabular_features_dim <- input_dim
+        } else {
+          # Try to infer output dimension from the tabular module
+          tabular_features_dim <- self$get_module_output_dim(
+            self$tabular_module,
+            fallback_input_dim = input_dim,
+            module_name = "tabular_module"
+          )
         }
-        current_dim <- next_dim
+        # Calculate total input dimensions after feature extraction
+        total_input_dim <- tabular_features_dim
+        if (!is.null(self$image_module)) {
+          # Try to infer output dimension from the image module
+          image_out_dim <- self$get_module_output_dim(
+            self$image_module,
+            fallback_input_dim = NULL,
+            module_name = "image_module"
+          )
+          total_input_dim <- total_input_dim + image_out_dim
+        }
+        # Build hidden MLP
+        if (is.function(activation)) {
+          act_funcs <- rep(list(activation), length(self$hidden_dims))
+        } else if (is.list(activation) && length(activation) ==
+                     length(self$hidden_dims)) {
+          act_funcs <- activation
+        } else {
+          stop("activation must match number of hidden layers.")
+        }
+        layers <- list()
+        current_dim <- total_input_dim
+        n_hidden_layers <- length(self$hidden_dims)
+        for (i in seq_len(n_hidden_layers)) {
+          next_dim <- self$hidden_dims[i]
+          layers[[length(layers) + 1]] <- nn_linear(current_dim, next_dim)
+          # Add batch norm and activation except on the final (output) layer
+          if (i < n_hidden_layers) {
+            layers[[length(layers) + 1]] <- nn_batch_norm1d(next_dim)
+            layers[[length(layers) + 1]] <- act_funcs[[i]]()
+            layers[[length(layers) + 1]] <- nn_dropout(p = drop_hidden)
+          }
+          current_dim <- next_dim
+        }
+        self$hidden <- nn_sequential(!!!layers)
+        self$final_hidden_dim <- current_dim
+      } else {
+        if (length(self$hidden_dims) > 0) {
+          fallback_dim <- self$hidden_dims[length(self$hidden_dims)]
+        } else {
+          fallback_dim <- NULL
+        }
+        self$hidden <- NULL
+        if (drop_hidden > 0) {
+          self$fusion_dropout <- nn_dropout(p = drop_hidden)
+        } else {
+          self$fusion_dropout <- NULL
+        }
+        self$final_hidden_dim <- self$get_module_output_dim(
+          self$fusion_module,
+          fallback_input_dim = fallback_dim,
+          module_name = "fusion_module"
+        )
       }
-      self$hidden <- nn_sequential(!!!layers)
-      self$final_hidden_dim <- current_dim
       # --------------------
       # Mixture weights (pi)
       # --------------------
@@ -450,15 +471,30 @@ define_mst_pmdn <- function(
       # Process image data if available
       if (!is.null(self$image_module) && !is.null(image_input)) {
         image_features <- self$image_module(image_input)
-        # Concatenate features from both branches
-        combined_features <- torch_cat(list(tabular_features, image_features),
-                                       dim = 2)
       } else {
-        # Only tabular features
-        combined_features <- tabular_features
+        image_features <- NULL
       }
-      # Continue with existing pipeline using combined features
-      h <- self$hidden(combined_features)
+      if (!is.null(self$fusion_module)) {
+        if (!is.null(image_features)) {
+          h <- self$fusion_module(tabular_features, image_features)
+        } else {
+          h <- self$fusion_module(tabular_features)
+        }
+        if (!is.null(self$fusion_dropout)) {
+          h <- self$fusion_dropout(h)
+        }
+      } else {
+        if (!is.null(image_features)) {
+          # Concatenate features from both branches
+          combined_features <- torch_cat(list(tabular_features, image_features),
+                                         dim = 2)
+        } else {
+          # Only tabular features
+          combined_features <- tabular_features
+        }
+        # Continue with existing pipeline using combined features
+        h <- self$hidden(combined_features)
+      }
       B <- x$size(1)  # batch size
       d <- self$output_dim
       # --------------------
@@ -1098,6 +1134,7 @@ train_mst_pmdn <- function(inputs,
                            image_inputs = NULL,
                            image_module = NULL,
                            tabular_module = NULL,
+                           fusion_module = NULL,
                            device = "cpu"
 ) {
   # Data preparation
@@ -1177,6 +1214,7 @@ train_mst_pmdn <- function(inputs,
       drop_hidden = drop_hidden,
       image_module = image_module,
       tabular_module = tabular_module,
+      fusion_module = fusion_module,
       fixed_nu = fixed_nu,
       range_nu = range_nu,
       max_alpha = max_alpha,
@@ -1206,6 +1244,7 @@ train_mst_pmdn <- function(inputs,
       drop_hidden = drop_hidden,
       image_module = image_module,
       tabular_module = tabular_module,
+      fusion_module = fusion_module,
       fixed_nu = fixed_nu,
       range_nu = range_nu,
       max_alpha = max_alpha,
@@ -1229,14 +1268,16 @@ train_mst_pmdn <- function(inputs,
   # Adam optimizer
   img_params    <- if (!is.null(model$image_module))   model$image_module$parameters   else list()
   tab_params    <- if (!is.null(model$tabular_module)) model$tabular_module$parameters else list()
-  hidden_params <- model$hidden$parameters
+  fusion_params <- if (!is.null(model$fusion_module)) model$fusion_module$parameters else list()
+  hidden_params <- if (!is.null(model$hidden)) model$hidden$parameters else list()
   all_params    <- model$parameters
-  feat_params   <- c(img_params, tab_params, hidden_params)
+  feat_params   <- c(img_params, tab_params, fusion_params, hidden_params)
   head_params   <- setdiff(all_params, feat_params)
   optimizer <- optim_adam(
     params = list(
       list(params = img_params, weight_decay = wd_image),
       list(params = tab_params, weight_decay = wd_tabular),
+      list(params = fusion_params),
       list(params = hidden_params),
       list(params = head_params)
     ),

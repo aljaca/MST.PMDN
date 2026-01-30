@@ -17,8 +17,9 @@ estimated by training a deep learning model with two multi-modal input
 branches, one for tabular inputs and the other for (optional) image 
 inputs. The two branches are provided as user-defined \pkg{torch} modules. 
 Outputs from each are concatenated and passed through a dense fusion 
-network, which then leads to the MST-PMDN head. In the absence of both 
-branches, the tabular inputs are fed directly into the dense network.
+network, unless a custom fusion module is supplied, which then leads to 
+the MST-PMDN head. In the absence of both branches, the tabular inputs 
+are fed directly into the dense network.
 
 Following the approach used in model-based clustering (\pkg{mclust}), scale 
 matrices in the MST-PMDN head are represented using an LAD 
