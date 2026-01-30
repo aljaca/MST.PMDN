@@ -17,6 +17,7 @@ define_mst_pmdn(
   drop_hidden     = 0,
   image_module    = NULL,
   tabular_module  = NULL,
+  fusion_module   = NULL,
   fixed_nu        = NULL,
   range_nu        = c(3, 500),
   max_alpha       = 2.5,
@@ -33,9 +34,10 @@ define_mst_pmdn(
   \item{constraint}{Character. Code for volume–shape–orientation, degrees of freedom \code{nu}, and skew constraints (e.g., “\code{VVVFN}”).}
   \item{constant_attr}{Character. Flags for parameters held constant (e.g., “\code{m}” for means, “\code{s}” for skew, etc.).}
   \item{activation}{Function. \pkg{torch} activation for hidden layers (default \code{nn_relu}).}
-  \item{drop_hidden}{Numeric between 0 and 1. Dropout probability after each hidden layer.}
+  \item{drop_hidden}{Numeric between 0 and 1. Dropout probability after each hidden layer; when \code{fusion_module} is provided, this dropout is applied to the fusion output.}
   \item{image_module}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
   \item{tabular_module}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
+  \item{fusion_module}{Optional \pkg{torch} \code{nn_module} that fuses tabular and image features. When provided, it replaces the default concatenation + MLP fusion network.}
   \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. If non-\code{NULL}, fixes degrees of freedom for each component.}
   \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}. Defaults to \code{c(3, 500)} to allow a tighter normal approximation in the tails.}
   \item{max_alpha}{Numeric. Absolute bound for skewness parameter.}

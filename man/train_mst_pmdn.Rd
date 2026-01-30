@@ -40,6 +40,7 @@ train_mst_pmdn(
   image_inputs           = NULL,
   image_module           = NULL,
   tabular_module         = NULL,
+  fusion_module          = NULL,
   device                 = "cpu"
 )
 }
@@ -63,7 +64,7 @@ train_mst_pmdn(
   \item{lr}{Numeric; learning rate for the optimizer.}
   \item{batch_size}{Integer; mini-batch size.}
   \item{max_norm}{Numeric; maximum gradient norm for clipping.}
-  \item{drop_hidden}{Numeric in [0,1]; dropout probability after each hidden layer.}
+  \item{drop_hidden}{Numeric in [0,1]; dropout probability after each hidden layer. When \code{fusion_module} is supplied, applies dropout to the fusion output.}
   \item{wd_image}{Numeric; weight decay (L2 penalty) for \code{image_module} parameters.}
   \item{wd_tabular}{Numeric; weight decay for \code{tabular_module} parameters.}
   \item{checkpoint_interval}{Integer; number of epochs between saved checkpoints.}
@@ -78,6 +79,7 @@ train_mst_pmdn(
   \item{image_inputs}{Optional array or \code{torch_tensor} of image data (4D) for multimodal models.}
   \item{image_module}{Optional \code{nn_module} for processing \code{image_inputs}.}
   \item{tabular_module}{Optional \code{nn_module} for processing \code{inputs}.}
+  \item{fusion_module}{Optional \code{nn_module} for fusing tabular and image features before the MST-PMDN head.}
   \item{device}{Character; torch device to use (e.g., \code{"cpu"} or \code{"cuda"}).}
 }
 \details{
