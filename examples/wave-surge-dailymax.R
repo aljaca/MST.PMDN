@@ -306,6 +306,7 @@ tabular_mod <- tabular_module(
   output_dim = 16,
   dropout_rate = 0.2
 )
+wd_tabular <- 0.01
 
 ##
 # The ImageModule accepts a 2×32×32 image, applies a series of 3×3 convs
@@ -319,16 +320,17 @@ image_mod <- image_module(
   conv_channels = c(16, 32, 64, 128),
   kernel_size = 3,
   pool_kernel = 2,
-  output_dim = 32
+  output_dim = 32,
+  dropout_rate = 0.2
 )
-wd_image <- 0.2
+wd_image <- 0.01
 
 ##
 # Dense fusion network that processes concatenated tabular and image features
 # and passes to the MST-PMDN head.
 
 hidden_dim <- c(64, 32)
-drop_hidden <- 0.5
+drop_hidden <- 0.2
 
 ## MST-MDN head
 # Predicts parameters of the mixture of MST distributions based on outputs
@@ -380,15 +382,15 @@ fit <- train_mst_pmdn(
   lr = 0.0001,
   max_norm = 1.,
   epochs = 200,
-  batch_size = 32,
+  batch_size = 16,
   drop_hidden = drop_hidden,
   wd_image = wd_image,
-  wd_tabular = 0.,
+  wd_tabular = wd_tabular,
   checkpoint_interval = 10,
   checkpoint_path = "wave-surge-checkpoint.pt",
   resume_from_checkpoint = FALSE,
   model = NULL,
-  early_stopping_patience = 50,
+  early_stopping_patience = 100,
   validation_split = 0,
   custom_split = custom_split,
   scheduler_step = 50,
