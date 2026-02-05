@@ -41,6 +41,7 @@ train_mst_pmdn(
   image_module           = NULL,
   tabular_module         = NULL,
   fusion_module          = NULL,
+  min_last_batch_frac    = 0.5,
   device                 = "cpu"
 )
 }
@@ -80,6 +81,7 @@ train_mst_pmdn(
   \item{image_module}{Optional \code{nn_module} for processing \code{image_inputs}.}
   \item{tabular_module}{Optional \code{nn_module} for processing \code{inputs}.}
   \item{fusion_module}{Optional \code{nn_module} for fusing tabular and image features before the MST-PMDN head.}
+  \item{min_last_batch_frac}{Numeric in [0,1]; drop the final incomplete mini-batch (for both training and validation loaders) only when its size is smaller than \code{ceiling(batch_size * min_last_batch_frac)}.}
   \item{device}{Character; torch device to use (e.g., \code{"cpu"} or \code{"cuda"}).}
 }
 \details{
