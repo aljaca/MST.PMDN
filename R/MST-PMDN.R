@@ -1135,8 +1135,16 @@ train_mst_pmdn <- function(inputs,
                            image_module = NULL,
                            tabular_module = NULL,
                            fusion_module = NULL,
+                           min_last_batch_frac = 0.5,
                            device = "cpu"
 ) {
+  if (!is.numeric(batch_size) || length(batch_size) != 1 || !is.finite(batch_size) || batch_size < 1)
+    stop("batch_size must be a single positive number")
+  batch_size <- as.integer(batch_size)
+  if (!is.numeric(min_last_batch_frac) || length(min_last_batch_frac) != 1 ||
+      !is.finite(min_last_batch_frac) || min_last_batch_frac < 0 || min_last_batch_frac > 1)
+    stop("min_last_batch_frac must be a single number between 0 and 1")
+
   # Data preparation
   if (!inherits(inputs, "torch_tensor"))
     inputs <- torch_tensor(inputs, device = device, dtype = torch_float())
@@ -1308,11 +1316,19 @@ train_mst_pmdn <- function(inputs,
       )(inp, img_inp, outp)
     }
   }
+  should_drop_last_batch <- function(n_samples, batch_size, min_frac) {
+    remainder <- n_samples %% batch_size
+    min_last_batch_size <- ceiling(batch_size * min_frac)
+    n_samples > batch_size && remainder > 0 && remainder < min_last_batch_size
+  }
+
   train_dataset <- dataset_fn(train_inputs, train_image_inputs, train_outputs)
-  train_loader  <- dataloader(train_dataset, batch_size = batch_size, shuffle = TRUE, drop_last = TRUE)
+  drop_last_train <- should_drop_last_batch(length(train_indices), batch_size, min_last_batch_frac)
+  train_loader  <- dataloader(train_dataset, batch_size = batch_size, shuffle = TRUE, drop_last = drop_last_train)
   if (!is.null(val_inputs)) {
     val_dataset <- dataset_fn(val_inputs, val_image_inputs, val_outputs)
-    val_loader  <- dataloader(val_dataset, batch_size = batch_size, shuffle = FALSE, drop_last = TRUE)
+    drop_last_val <- should_drop_last_batch(length(val_indices), batch_size, min_last_batch_frac)
+    val_loader  <- dataloader(val_dataset, batch_size = batch_size, shuffle = FALSE, drop_last = drop_last_val)
   }
   # Training loop
   final_epoch <- NA
