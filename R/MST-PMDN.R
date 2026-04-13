@@ -42,8 +42,8 @@ build_orthogonal_matrix <- function(params, dim) {
   X <- torch_zeros(batch_size, dim, dim, device = dev)
   indices_orig <- torch_triu_indices(dim, dim, offset = 1,
                                      dtype = torch_long(), device = dev)
-  row_indices_1d <- indices_orig[1, ]$add(1)$to(dtype = torch_long())
-  col_indices_1d <- indices_orig[2, ]$add(1)$to(dtype = torch_long())
+  row_indices_1d <- indices_orig[1, ]$to(dtype = torch_long())
+  col_indices_1d <- indices_orig[2, ]$to(dtype = torch_long())
   batch_vals <- torch_arange(1, batch_size, device = dev, dtype = torch_long())
   # Expand batch, row, and column indices for broadcasting
   num_triu_elements <- indices_orig$size(2)
