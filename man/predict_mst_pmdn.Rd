@@ -19,7 +19,7 @@ predict_mst_pmdn(model, new_inputs, image_inputs = NULL, device = "cpu")
 A named \code{list} containing the output of the model’s forward pass:
 \describe{
   \item{\code{pi}}{Mixture weights tensor of shape \code{[batch_size, M]}.}
-  \item{\code{mu}}{Component means tensor of shape \code{[batch_size, M, d]}.}
+  \item{\code{mu}}{Component skew-t location tensor of shape \code{[batch_size, M, d]}. This is not the component mean when skewness is nonzero.}
   \item{\code{scale_chol}}{Cholesky scale factors tensor of shape \code{[batch_size, M, d, d]}.}
   \item{\code{nu}}{Degrees-of-freedom tensor of shape \code{[batch_size, M]}.}
   \item{\code{alpha}}{Skewness parameters tensor of shape \code{[batch_size, M, d]}.}

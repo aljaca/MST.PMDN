@@ -38,7 +38,7 @@ For comparable results across chained sampling-based summaries, either pass the 
 \code{seed} to each call or reuse identical \code{draws}.
 }
 \value{
-A numeric vector of estimated marginal CDF values, aligned with \code{y}.
+A \code{torch_tensor} of estimated marginal CDF values with rows aligned to the prediction batch and columns aligned to the selected output dimensions.
 }
 \seealso{
 \code{\link{quantile_marginal_mst_pmdn}}, \code{\link{sample_mst_pmdn}}
