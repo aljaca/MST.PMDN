@@ -51,7 +51,7 @@ train_mst_pmdn(
   \item{hidden_dim}{Integer vector giving the sizes of the hidden layers in the fusion network.}
   \item{n_mixtures}{Integer; number of mixture components \code{M}.}
   \item{constraint}{Character; MST-PMDN constraint code (volume–shape–orientation, degrees of freedon \code{nu}, and skew), e.g. \code{"VVVFN"}.}
-  \item{constant_attr}{Character; flags for parameters held constant ("m" for means, "x" for mixing coefficients, "L" for volume, "A" for shape, "D" for orientation, "n" for degrees of freedom \code{nu}, and "s" for skew).}
+  \item{constant_attr}{Character; flags for parameters held constant ("m" for skew-t locations, "x" for mixing coefficients, "L" for volume, "A" for shape, "D" for orientation, "n" for degrees of freedom \code{nu}, and "s" for skew).}
   \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}; if non-\code{NULL}, fixes degrees of freedom \code{nu} per component.}
   \item{range_nu}{Numeric vector of length 2: clamp range for \code{nu}. Defaults to \code{c(3, 500)} so the normal approximation used in the tails remains accurate.}
   \item{max_alpha}{Numeric; maximum absolute skewness parameter.}
@@ -69,8 +69,8 @@ train_mst_pmdn(
   \item{wd_image}{Numeric; weight decay (L2 penalty) for \code{image_module} parameters.}
   \item{wd_tabular}{Numeric; weight decay for \code{tabular_module} parameters.}
   \item{checkpoint_interval}{Integer; number of epochs between saved checkpoints.}
-  \item{checkpoint_path}{Character; file path for saving model checkpoints.}
-  \item{resume_from_checkpoint}{Logical; if \code{TRUE}, loads and resumes from an existing checkpoint.}
+  \item{checkpoint_path}{Character; file path for the latest resumable training state. The best validation model is saved separately using a derived \code{_best} path.}
+  \item{resume_from_checkpoint}{Logical; if \code{TRUE}, restores the model, optimizer, split, histories, counters, and available RNG states from \code{checkpoint_path}.}
   \item{model}{An existing \code{mst_pmdn_model} to continue training, or \code{NULL} to initialize a new one.}
   \item{early_stopping_patience}{Integer; epochs with no validation improvement before stopping.}
   \item{validation_split}{Numeric in [0,1]; fraction of cases held out for validation if \code{custom_split} is \code{NULL}.}
@@ -81,13 +81,13 @@ train_mst_pmdn(
   \item{image_module}{Optional \code{nn_module} for processing \code{image_inputs}.}
   \item{tabular_module}{Optional \code{nn_module} for processing \code{inputs}.}
   \item{fusion_module}{Optional \code{nn_module} for fusing tabular and image features before the MST-PMDN head.}
-  \item{min_last_batch_frac}{Numeric in [0,1]; drop the final incomplete mini-batch (for both training and validation loaders) only when its size is smaller than \code{ceiling(batch_size * min_last_batch_frac)}.}
+  \item{min_last_batch_frac}{Numeric in [0,1]; drop the final incomplete training mini-batch only when its size is smaller than \code{ceiling(batch_size * min_last_batch_frac)}. Validation always evaluates every case.}
   \item{device}{Character; torch device to use (e.g., \code{"cpu"} or \code{"cuda"}).}
 }
 \details{
 Splits the data into training/validation sets (unless \code{custom_split} is provided), initializes or loads the model,
 and then runs an Adam optimization loop with optional gradient clipping, weight decay, dropout, early stopping, checkpointing,
-and learning-rate scheduling.  After training, the best‐performing model (by validation or training loss) is reloaded before returning. 
+and learning-rate scheduling. Training and validation histories are observation-weighted rather than batch-weighted. The latest resumable state and best-performing model are stored separately, and the best model (by validation or training loss) is reloaded before returning.
 }
 \value{
 A \code{list} with components:
@@ -102,5 +102,7 @@ A \code{list} with components:
   \item{final_epoch}{Last completed epoch.}
   \item{train_indices}{Indices of cases used for training.}
   \item{val_indices}{Indices of cases used for validation.}
+  \item{checkpoint_path}{Path containing the latest resumable training state.}
+  \item{best_checkpoint_path}{Path containing the best validation- or training-loss model.}
 }
 }

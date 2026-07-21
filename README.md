@@ -5,7 +5,7 @@
 
 In an MST-PMDN model, parameters of a mixture of multivariate skew t distributions that describe a multivariate output are estimated by training a deep learning model with two multi-modal input branches, one for tabular inputs and the other for (optional) image inputs. The two branches are provided as user-defined ['torch'](https://torch.mlverse.org/) modules. Outputs from each are concatenated and passed through a dense fusion network unless a custom fusion module is supplied, which then leads to the MST-PMDN head. In the absence of both branches, the tabular inputs are fed directly into the dense network. The overall network architecture is [shown here](deep-MST-PMDN.png).
 
-Following the approach used in model-based clustering (['mclust'](https://cran.r-project.org/package=mclust)), scale matrices in the MST-PMDN head are represented using an LAD eigen-decomposition parameterization. LAD attributes, the nu (or degrees of freedom) parameter (n), and the alpha (or skewness) parameter (s) can be forced to be `"V"`ariable or `"E"`qual between mixture components (plus `"I"`dentity for A and D). For n and s parameters, the model can also be constrained to emulate a multivariate `"N"`ormal (or Gaussian) distribution. Different model types are specified by setting the argument `constraint = "EIINN"`, `"VEVEV"`, etc. where each letter position in the argument corresponds, respectively, to each of the LADns attributes. In the case of n, users can specify `"F"`ixed values for nu and pass a `fixed_nu` vector as an additional argument. If an element of `fixed_nu` is set to `NA`, then the value of nu for this component is learned by the network. Furthermore, values of  mu (or means) (m), pi (or mixing coefficients) (x), volume-shape-orientation attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to be independent of inputs by specifying any combination of `constant_attr = "m"`, `"mx"`, ..., `"LADmxns"`.
+Following the approach used in model-based clustering (['mclust'](https://cran.r-project.org/package=mclust)), scale matrices in the MST-PMDN head are represented using an LAD eigen-decomposition parameterization. LAD attributes, the nu (or degrees of freedom) parameter (n), and the alpha (or skewness) parameter (s) can be forced to be `"V"`ariable or `"E"`qual between mixture components (plus `"I"`dentity for A and D). For n and s parameters, the model can also be constrained to emulate a multivariate `"N"`ormal (or Gaussian) distribution. Different model types are specified by setting the argument `constraint = "EIINN"`, `"VEVEV"`, etc. where each letter position in the argument corresponds, respectively, to each of the LADns attributes. In the case of n, users can specify `"F"`ixed values for nu and pass a `fixed_nu` vector as an additional argument. If an element of `fixed_nu` is set to `NA`, then the value of nu for this component is learned by the network. Furthermore, values of mu (the skew-t location parameter) (m), pi (or mixing coefficients) (x), volume-shape-orientation attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to be independent of inputs by specifying any combination of `constant_attr = "m"`, `"mx"`, ..., `"LADmxns"`. When skewness is nonzero, mu is not the component mean.
 
 By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN can emulate the Gaussian finite mixture models implemented by ['mclust'](https://cran.r-project.org/package=mclust), i.e., for unconditional density estimation or model-based clustering:
 
@@ -301,7 +301,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 #### Function: `init_mu_kmeans(model, outputs_train, ...)`
 
-*   **Purpose:** Initializes the component mean parameters (`mu`) using k-means clustering.
+*   **Purpose:** Initializes the component location parameters (`mu`) using k-means clustering.
 *   **Method:** Applies k-means to the training output data to find initial centroids. These centroids initialize either the `model$mu` parameters (if constant) or the bias of the `model$fc_mu` layer (if network-dependent), setting initial weights to zero.
 *   **Context:** A heuristic to provide a potentially better starting point for training compared to random initialization, aiming for faster convergence.
 
@@ -391,7 +391,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `train_mst_pmdn(...)`
 
 *   **Purpose:** Manages the model training process.
-*   **Method:** Includes data loading, model/optimizer setup (with k-means init), training loop (loss calculation, backpropagation, optimization), validation, learning rate scheduling, checkpointing, and early stopping. Handles optional image inputs correctly and allows weighting an L2 penalty on `alpha` through `lambda_alpha` and on `(1/nu)^2` through `lambda_nu_inv`.
+*   **Method:** Includes data loading, model/optimizer setup (with k-means init), training loop (loss calculation, backpropagation, optimization), complete-case validation, learning rate scheduling, checkpointing, and early stopping. The latest resumable state is stored at `checkpoint_path`; the best model is stored separately at a derived `_best` path. Resumption restores the saved split, optimizer, histories, counters, and available R/torch RNG states. Handles optional image inputs and allows weighting an L2 penalty on `alpha` through `lambda_alpha` and on `(1/nu)^2` through `lambda_nu_inv`.
 *   **Output:** Trained model, loss history, and training/validation indices.
 
 #### Function: `predict_mst_pmdn(model, new_inputs, ...)`
@@ -400,14 +400,11 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Method:** Runs a forward pass on new inputs in evaluation mode (`torch_no_grad()`).
 *   **Output:** Raw model output list containing mixture parameters for the new inputs.
 
-#### Function: `scov_mst_pmdn(pred, type = c("cov", "scale_chol"), ...)`
+#### Function: `scov_mst_pmdn(pred, type = c("scale", "scale_chol", "cov"), ...)`
 
-*   **Purpose:** Converts the volume-shape-orientation decomposition (`L`, `A`, `D`) from `predict_mst_pmdn` into full
-    scale or covariance matrices or their Cholesky factors for each mixture component.
-*   **Method:** Reconstructs the scale matrix via `L^{1/2} * D * sqrt(A)` and optionally computes the Cholesky factor of the
-    resulting covariance.
-*   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]` containing covariance matrices or
-    Cholesky factors.
+*   **Purpose:** Returns component scale matrices, their Cholesky factors, or actual skew-t covariance matrices.
+*   **Method:** Uses the `scale_chol` factor employed by the likelihood. For `type = "cov"`, the scale is transformed using both `nu` and `alpha`; covariance is undefined for `nu <= 2`.
+*   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]`. The default `type = "scale"` retains the numerical output returned by earlier versions under the misleading name `"cov"`.
 
 
 ## References

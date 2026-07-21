@@ -34,7 +34,7 @@ respectively, to each of the LADns attributes. In the case of n, users
 can specify \code{"F"}ixed values for nu by passing an optional \code{fixed_nu} 
 vector. If an element of \code{fixed_nu} is set to \code{NA}, then the value 
 of nu for this component is learned by the network. Furthermore, values of mu (or 
-means) (m), pi (or mixing coefficients) (x), volume-shape-orientation 
+skew-t locations) (m), pi (or mixing coefficients) (x), volume-shape-orientation
 attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to 
 be independent of inputs by specifying any combination of 
 \code{constant_attr = "m"}, \code{"mx"}, ..., \code{"LADmxns"}.

@@ -35,6 +35,15 @@ sample_gamma <- function(shape, scale = 1, device = "cpu") {
   return(out)
 }
 
+validate_num_samples <- function(num_samples) {
+  if (!is.numeric(num_samples) || length(num_samples) != 1 ||
+      !is.finite(num_samples) || num_samples < 1 ||
+      num_samples != floor(num_samples)) {
+    stop("num_samples must be a positive integer.")
+  }
+  as.integer(num_samples)
+}
+
 build_orthogonal_matrix <- function(params, dim) {
   # Helper for building an orthogonal orientation matrix
   dev <- params$device
@@ -169,6 +178,62 @@ init_weight_norm <- function(module) {
       module$g$copy_(norm_v)
     })
   }
+}
+
+init_distribution_heads <- function(model) {
+  # Apply specialized initialization after the generic weight-normalized
+  # initialization so learned nu and alpha begin input-independent.
+  with_no_grad({
+    for (head_name in c("fc_nu", "fc_nu_partial")) {
+      head <- model[[head_name]]
+      if (!is.null(head)) {
+        head$V$normal_(0, 0.02)
+        head$g$zero_()
+        head$bias$zero_()
+      }
+    }
+    if (!is.null(model$fc_alpha)) {
+      model$fc_alpha$V$normal_(0, 0.02)
+      model$fc_alpha$g$zero_()
+      model$fc_alpha$bias$zero_()
+    }
+  })
+}
+
+derive_checkpoint_path <- function(path, suffix) {
+  derived <- sub("\\.pt$", paste0(suffix, ".pt"), path)
+  if (identical(derived, path)) {
+    derived <- paste0(path, suffix)
+  }
+  derived
+}
+
+capture_training_rng_state <- function() {
+  list(
+    r = if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+      get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+    } else {
+      NULL
+    },
+    torch = torch_get_rng_state(),
+    cuda = if (cuda_is_available()) cuda_get_rng_state() else NULL
+  )
+}
+
+restore_training_rng_state <- function(state) {
+  if (is.null(state)) {
+    return(invisible(FALSE))
+  }
+  if (!is.null(state$r)) {
+    assign(".Random.seed", state$r, envir = .GlobalEnv)
+  }
+  if (!is.null(state$torch)) {
+    torch_set_rng_state(state$torch)
+  }
+  if (!is.null(state$cuda) && cuda_is_available()) {
+    cuda_set_rng_state(state$cuda)
+  }
+  invisible(TRUE)
 }
 
 # -----------------------------------------
@@ -314,7 +379,7 @@ define_mst_pmdn <- function(
         self$fc_pi <- weight_norm_linear(self$final_hidden_dim, n_mixtures)
       }
       # ----------
-      # Means (mu)
+      # Locations (mu)
       # ----------
       if (grepl("m", constant_attr)) {
         self$mu <- nn_parameter(torch_randn(n_mixtures, output_dim))
@@ -454,7 +519,7 @@ define_mst_pmdn <- function(
           self$fc_alpha <- weight_norm_linear(self$final_hidden_dim, alpha_size)      
           with_no_grad({
             self$fc_alpha$V$normal_(0, 0.02)
-            self$fc_alpha$bias$normal_(0, 0.02)
+            self$fc_alpha$bias$zero_()
             self$fc_alpha$g$fill_(0)
           })
         }
@@ -510,7 +575,7 @@ define_mst_pmdn <- function(
       pi_clamped <- pi_raw$clamp(min = self$min_mix_weight, max = max_weight)
       pi <- pi_clamped / pi_clamped$sum(dim = 2, keepdim = TRUE)
       # ----------
-      # Means (mu)
+      # Locations (mu)
       # ----------
       if (grepl("m", self$constant_attr)) {
         mu <- self$mu$unsqueeze(1)$expand(c(B, -1, -1)) # [B, M, d]
@@ -797,6 +862,7 @@ loss_mst_pmdn <- function(output, target,
 # -----------------------------------------------
 
 sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
+  num_samples <- validate_num_samples(num_samples)
   # gather parameters
   pi     <- mdn_output$pi          $to(device = device)
   mu     <- mdn_output$mu          $to(device = device)
@@ -806,8 +872,9 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   B <- pi$size(1)
   # M <- pi$size(2)
   d <- mu$size(3)
-  # component indices (1-based)
-  idx      <- pi$multinomial(num_samples, replacement = TRUE)$add(1L)
+  # Use the public torch wrapper, which converts libtorch's zero-based result
+  # to the one-based indices expected by R torch indexing operations.
+  idx      <- torch_multinomial(pi, num_samples, replacement = TRUE)
   idx_d    <- idx$unsqueeze(-1)$expand(c(B, num_samples, d))
   idx_dd   <- idx$unsqueeze(-1)$unsqueeze(-1)$expand(c(B, num_samples, d, d))
   # gather parameters for the selected components
@@ -820,14 +887,23 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   W    <- torch_sqrt(nu_s / chi2$clamp(min = 1e-12))$unsqueeze(-1)
   # skew direction (identity-covariance, Sigma = I convention)
   alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
-  delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq + 1e-10)
+  delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
   delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
   # standard normals
   z0 <- torch_randn(c(B, num_samples, 1), device = device)
   z1 <- torch_randn(c(B, num_samples, d), device = device)
-  # skew-normal core
-  X <- delta * torch_abs(z0) +
-    torch_sqrt((1 - delta_norm_sq)$clamp(min = 1e-12)) * z1
+  # Skew-normal core.  The residual requires the symmetric matrix square root
+  # of I - delta delta^T.  Apply its rank-one form without materializing a
+  # [B, S, d, d] tensor:
+  # (I - delta delta^T)^(1/2) z =
+  # z - delta (delta^T z) / (1 + sqrt(1 - ||delta||^2)).
+  sqrt_one_minus_delta_sq <- torch_sqrt(
+    (1 - delta_norm_sq)$clamp(min = 1e-12)
+  )
+  delta_dot_z1 <- (delta * z1)$sum(dim = -1, keepdim = TRUE)
+  residual <- z1 - delta * delta_dot_z1 /
+    (1 + sqrt_one_minus_delta_sq)
+  X <- delta * torch_abs(z0) + residual
   # affine map to response space  Y
   Y <- mu_s + W * (torch_matmul(L_s, X$unsqueeze(-1))$squeeze(-1))
   # return both samples and component IDs
@@ -838,39 +914,17 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
 }
 
 sample_mst_pmdn_df <- function(mdn_output, num_samples = 1, device = "cpu") {
-  # gather parameters
-  pi         <- mdn_output$pi         $to(device = device)
-  mu         <- mdn_output$mu         $to(device = device)
-  L_all      <- mdn_output$scale_chol $to(device = device)
-  nu_all     <- mdn_output$nu         $to(device = device)
-  alpha_all  <- mdn_output$alpha      $to(device = device)
-  B <- pi$size(1)
-  # M <- pi$size(2)
-  d <- mu$size(3)
-  # component indices (1-based)
-  idx    <- pi$multinomial(num_samples, replacement = TRUE)$add(1L)
-  idx_d  <- idx$unsqueeze(-1)$expand(c(B, num_samples, d))
-  idx_dd <- idx$unsqueeze(-1)$unsqueeze(-1)$expand(c(B, num_samples, d, d))
-  # gather parameters for the selected components
-  mu_s     <- mu        $gather(2, idx_d)
-  L_s      <- L_all     $gather(2, idx_dd)
-  nu_s     <- nu_all    $gather(2, idx)
-  alpha_s  <- alpha_all $gather(2, idx_d)
-  # Gamma scaling for Student-t tails
-  chi2 <- sample_gamma(nu_s / 2, scale = 2, device = device)
-  W    <- torch_sqrt(nu_s / chi2$clamp(min = 1e-12))$unsqueeze(-1)
-  # skew direction (identity-covariance, Sigma = I convention)
-  alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
-  delta         <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
-  delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
-  # standard normals
-  z0 <- torch_randn(c(B, num_samples, 1), device = device)
-  z1 <- torch_randn(c(B, num_samples, d), device = device)
-  # skew-normal core
-  X <- delta * torch_abs(z0) +
-    torch_sqrt((1 - delta_norm_sq)$clamp(min = 1e-12)) * z1
-  # affine map to response space  Y
-  Y <- mu_s + W * (torch_matmul(L_s, X$unsqueeze(-1))$squeeze(-1))
+  num_samples <- validate_num_samples(num_samples)
+  sampled <- sample_mst_pmdn(
+    mdn_output,
+    num_samples = num_samples,
+    device = device
+  )
+  # Restore [B, S, ...] layout for data-frame construction.
+  Y <- sampled$samples$permute(c(2, 1, 3))
+  idx <- sampled$components$permute(c(2, 1))
+  B <- Y$size(1)
+  d <- Y$size(3)
   # reshape to long data-frame
   S   <- num_samples
   mat  <- as.matrix(Y$reshape(c(B * S, d))$cpu())
@@ -899,9 +953,7 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
   if (!all(required_fields %in% names(mdn_output))) {
     stop("mdn_output is missing required fields from predict_mst_pmdn.")
   }
-  if (!is.numeric(num_samples) || length(num_samples) != 1 || num_samples < 1) {
-    stop("num_samples must be a positive integer.")
-  }
+  num_samples <- validate_num_samples(num_samples)
   d <- mdn_output$mu$size(3)
   var_index_provided <- !is.null(var_index)
   if (!var_index_provided) {
@@ -982,11 +1034,7 @@ cdf_marginal_mst_pmdn <- function(mdn_output,
   x_broadcast <- x_tensor$unsqueeze(1)
   counts <- (samples <= x_broadcast)$to(dtype = torch_float())$sum(dim = 1)
   n_draws <- samples$size(1)
-  if (n_draws == 1) {
-    cdf <- counts
-  } else {
-    cdf <- ((counts - 1) / (n_draws - 1))$clamp(min = 0, max = 1)
-  }
+  cdf <- (counts / n_draws)$clamp(min = 0, max = 1)
   cdf
 }
 
@@ -1138,12 +1186,34 @@ train_mst_pmdn <- function(inputs,
                            min_last_batch_frac = 0.5,
                            device = "cpu"
 ) {
-  if (!is.numeric(batch_size) || length(batch_size) != 1 || !is.finite(batch_size) || batch_size < 1)
-    stop("batch_size must be a single positive number")
+  is_positive_integer <- function(x) {
+    is.numeric(x) && length(x) == 1 && is.finite(x) &&
+      x >= 1 && x == floor(x)
+  }
+  if (!is_positive_integer(batch_size))
+    stop("batch_size must be a single positive integer")
+  if (!is_positive_integer(epochs))
+    stop("epochs must be a single positive integer")
+  if (!is_positive_integer(checkpoint_interval))
+    stop("checkpoint_interval must be a single positive integer")
+  if (!is.null(scheduler_step) && !is_positive_integer(scheduler_step))
+    stop("scheduler_step must be NULL or a single positive integer")
   batch_size <- as.integer(batch_size)
+  epochs <- as.integer(epochs)
+  checkpoint_interval <- as.integer(checkpoint_interval)
+  if (!is.null(scheduler_step)) scheduler_step <- as.integer(scheduler_step)
   if (!is.numeric(min_last_batch_frac) || length(min_last_batch_frac) != 1 ||
-      !is.finite(min_last_batch_frac) || min_last_batch_frac < 0 || min_last_batch_frac > 1)
+      !is.finite(min_last_batch_frac) || min_last_batch_frac < 0 ||
+      min_last_batch_frac > 1)
     stop("min_last_batch_frac must be a single number between 0 and 1")
+  if (!is.numeric(validation_split) || length(validation_split) != 1 ||
+      !is.finite(validation_split) || validation_split < 0 ||
+      validation_split >= 1)
+    stop("validation_split must be a single number in [0, 1)")
+  if (isTRUE(resume_from_checkpoint) && !is.null(model))
+    stop("model and resume_from_checkpoint cannot be used together")
+  if (isTRUE(resume_from_checkpoint) && !file.exists(checkpoint_path))
+    stop("resume_from_checkpoint is TRUE but checkpoint_path does not exist")
 
   # Data preparation
   if (!inherits(inputs, "torch_tensor"))
@@ -1156,65 +1226,128 @@ train_mst_pmdn <- function(inputs,
     outputs <- outputs$to(device = device)
   if (!is.null(image_inputs)) {
     if (!inherits(image_inputs, "torch_tensor"))
-      image_inputs <- torch_tensor(image_inputs, device = device, dtype = torch_float())
+      image_inputs <- torch_tensor(image_inputs, device = device,
+                                   dtype = torch_float())
     else
       image_inputs <- image_inputs$to(device = device)
   }
-  # Data training/validation split
   n_total <- inputs$size(1)
-  if (!is.null(custom_split)) {
-    if (is.list(custom_split) && all(c("train", "validation") %in% names(custom_split))) {
-      train_indices <- custom_split$train
-      val_indices <- custom_split$validation
-    } else if (is.list(custom_split) && length(custom_split) == 2) {
-      train_indices <- custom_split[[1]]
-      val_indices <- custom_split[[2]]
-    } else if (is.numeric(custom_split)) {
-      val_indices <- custom_split
-      train_indices <- setdiff(seq_len(n_total), val_indices)
-    } else if (is.logical(custom_split) && length(custom_split) == n_total) {
-      train_indices <- which(custom_split)
-      val_indices <- which(!custom_split)
-    } else stop("Invalid custom_split format.")
-    if (length(train_indices) == 0 || length(val_indices) == 0)
-      stop("Both training and validation sets must contain at least one sample")
-  } else if (validation_split > 0 && validation_split < 1) {
-    val_indices <- sample.int(n_total, size = floor(n_total * validation_split))
-    train_indices <- setdiff(seq_len(n_total), val_indices)
-  } else {
-    train_indices <- seq_len(n_total)
-    val_indices <- integer(0)
+  input_dim <- inputs$size(2)
+  output_dim <- outputs$size(2)
+  if (outputs$size(1) != n_total)
+    stop("inputs and outputs must have the same number of rows")
+  if (!is.null(image_inputs) && image_inputs$size(1) != n_total)
+    stop("image_inputs must have the same number of rows as inputs")
+
+  resuming <- isTRUE(resume_from_checkpoint)
+  checkpoint <- if (resuming) torch_load(checkpoint_path) else NULL
+  if (resuming && !is.null(checkpoint$data_signature)) {
+    signature <- checkpoint$data_signature
+    if (!identical(as.integer(signature$n_total), as.integer(n_total)) ||
+        !identical(as.integer(signature$input_dim), as.integer(input_dim)) ||
+        !identical(as.integer(signature$output_dim), as.integer(output_dim)) ||
+        !identical(as.integer(signature$n_mixtures), as.integer(n_mixtures)) ||
+        !identical(signature$constraint, constraint) ||
+        !identical(signature$constant_attr, constant_attr)) {
+      stop("Checkpoint architecture or data dimensions do not match this run")
+    }
   }
+
+  # Restore the original split before making data subsets. Older checkpoints
+  # lack these fields and retain the legacy split behavior with a warning.
+  if (resuming && !is.null(checkpoint$train_indices) &&
+      !is.null(checkpoint$val_indices)) {
+    train_indices <- checkpoint$train_indices
+    val_indices <- checkpoint$val_indices
+    if (!is.null(custom_split)) {
+      warning("custom_split is ignored when resuming; using the split saved in the checkpoint.")
+    }
+  } else {
+    if (resuming) {
+      warning("Legacy checkpoint has no saved split; exact resumption is not possible.")
+    }
+    if (!is.null(custom_split)) {
+      if (is.list(custom_split) &&
+          all(c("train", "validation") %in% names(custom_split))) {
+        train_indices <- custom_split$train
+        val_indices <- custom_split$validation
+      } else if (is.list(custom_split) && length(custom_split) == 2) {
+        train_indices <- custom_split[[1]]
+        val_indices <- custom_split[[2]]
+      } else if (is.numeric(custom_split)) {
+        val_indices <- custom_split
+        train_indices <- setdiff(seq_len(n_total), val_indices)
+      } else if (is.logical(custom_split) && length(custom_split) == n_total) {
+        train_indices <- which(custom_split)
+        val_indices <- which(!custom_split)
+      } else {
+        stop("Invalid custom_split format.")
+      }
+    } else if (validation_split > 0) {
+      n_validation <- floor(n_total * validation_split)
+      if (n_validation < 1)
+        stop("validation_split produces an empty validation set")
+      val_indices <- sample.int(n_total, size = n_validation)
+      train_indices <- setdiff(seq_len(n_total), val_indices)
+    } else {
+      train_indices <- seq_len(n_total)
+      val_indices <- integer(0)
+    }
+  }
+  train_indices <- as.integer(train_indices)
+  val_indices <- as.integer(val_indices)
+  if (length(train_indices) == 0 || anyNA(train_indices) ||
+      any(train_indices < 1 | train_indices > n_total) ||
+      anyDuplicated(train_indices))
+    stop("Training indices must be unique, in bounds, and non-empty")
+  if (anyNA(val_indices) || any(val_indices < 1 | val_indices > n_total) ||
+      anyDuplicated(val_indices))
+    stop("Validation indices must be unique and in bounds")
+  if (length(intersect(train_indices, val_indices)) > 0)
+    stop("Training and validation indices must be disjoint")
+
   train_inputs <- inputs[train_indices, ]
   train_outputs <- outputs[train_indices, ]
-  train_image_inputs <- if (!is.null(image_inputs)) image_inputs[train_indices, ] else NULL
+  train_image_inputs <- if (!is.null(image_inputs)) {
+    image_inputs[train_indices, ]
+  } else {
+    NULL
+  }
   if (length(val_indices) > 0) {
     val_inputs <- inputs[val_indices, ]
     val_outputs <- outputs[val_indices, ]
-    val_image_inputs <- if (!is.null(image_inputs)) image_inputs[val_indices, ] else NULL
+    val_image_inputs <- if (!is.null(image_inputs)) {
+      image_inputs[val_indices, ]
+    } else {
+      NULL
+    }
   } else {
     val_inputs <- NULL
     val_outputs <- NULL
     val_image_inputs <- NULL
   }
+
+  extend_history <- function(history, length_out) {
+    if (is.null(history)) history <- numeric(0)
+    if (length(history) < length_out) {
+      history <- c(history, rep(NA_real_, length_out - length(history)))
+    }
+    history
+  }
+  history_length <- max(epochs, if (resuming) checkpoint$epoch else 0)
+
   # Model initialization logic
-  checkpoint <- NULL
   if (!is.null(model)) {
-    # Use provided model, reset all counters/optimizer
     model <- model$to(device = device)
-    start_epoch <- 1
-    train_loss_history <- rep(NA_real_, epochs)
-    val_loss_history   <- rep(NA_real_, epochs)
-    best_val_loss     <- Inf
-    best_val_epoch    <- NA
-    no_improve_epochs <- 0
-    best_train_loss   <- Inf
-    best_train_epoch  <- NA
-  } else if (resume_from_checkpoint && file.exists(checkpoint_path)) {
-    # Load from checkpoint, restore everything
-    checkpoint <- torch_load(checkpoint_path)
-    input_dim  <- inputs$size(2)
-    output_dim <- outputs$size(2)
+    start_epoch <- 1L
+    train_loss_history <- rep(NA_real_, history_length)
+    val_loss_history <- rep(NA_real_, history_length)
+    best_val_loss <- Inf
+    best_val_epoch <- NA_integer_
+    no_improve_epochs <- 0L
+    best_train_loss <- Inf
+    best_train_epoch <- NA_integer_
+  } else if (resuming) {
     model <- define_mst_pmdn(
       input_dim, output_dim, hidden_dim, n_mixtures,
       constraint, constant_attr,
@@ -1232,19 +1365,40 @@ train_mst_pmdn <- function(inputs,
     )
     model$load_state_dict(checkpoint$model_state_dict)
     model <- model$to(device = device)
-    train_loss_history <- checkpoint$train_loss_history
-    val_loss_history   <- checkpoint$val_loss_history
-    start_epoch        <- checkpoint$epoch + 1
-    best_val_loss      <- checkpoint$best_val_loss
-    best_val_epoch     <- checkpoint$best_val_epoch
-    no_improve_epochs  <- checkpoint$no_improve_epochs
-    best_train_loss    <- if (!is.null(checkpoint$best_train_loss)) checkpoint$best_train_loss else Inf
-    best_train_epoch   <- if (!is.null(checkpoint$best_train_epoch)) checkpoint$best_train_epoch else NA
-    cat(sprintf("Resumed from checkpoint at epoch %d with best_val_loss=%.4f\n", checkpoint$epoch, best_val_loss))
+    train_loss_history <- extend_history(
+      checkpoint$train_loss_history, history_length
+    )
+    val_loss_history <- extend_history(
+      checkpoint$val_loss_history, history_length
+    )
+    start_epoch <- as.integer(checkpoint$epoch) + 1L
+    best_val_loss <- if (!is.null(checkpoint$best_val_loss)) {
+      checkpoint$best_val_loss
+    } else {
+      Inf
+    }
+    best_val_epoch <- if (!is.null(checkpoint$best_val_epoch)) {
+      checkpoint$best_val_epoch
+    } else {
+      NA_integer_
+    }
+    no_improve_epochs <- if (!is.null(checkpoint$no_improve_epochs)) {
+      checkpoint$no_improve_epochs
+    } else {
+      0L
+    }
+    best_train_loss <- if (!is.null(checkpoint$best_train_loss)) {
+      checkpoint$best_train_loss
+    } else {
+      Inf
+    }
+    best_train_epoch <- if (!is.null(checkpoint$best_train_epoch)) {
+      checkpoint$best_train_epoch
+    } else {
+      NA_integer_
+    }
+    cat(sprintf("Resumed from checkpoint at epoch %d.\n", checkpoint$epoch))
   } else {
-    # New model, new optimizer, reset everything
-    input_dim  <- inputs$size(2)
-    output_dim <- outputs$size(2)
     model <- define_mst_pmdn(
       input_dim, output_dim, hidden_dim, n_mixtures,
       constraint, constant_attr,
@@ -1261,26 +1415,39 @@ train_mst_pmdn <- function(inputs,
       jitter = jitter
     )
     model$apply(init_weight_norm)
+    init_distribution_heads(model)
     model <- model$to(device = device)
-    init_mu_kmeans(model, outputs_train = train_outputs, n_mixtures = n_mixtures,
-                   constant_attr = constant_attr, device = device)
-    start_epoch <- 1
-    train_loss_history <- rep(NA_real_, epochs)
-    val_loss_history   <- rep(NA_real_, epochs)
-    best_val_loss     <- Inf
-    best_val_epoch    <- NA
-    no_improve_epochs <- 0
-    best_train_loss   <- Inf
-    best_train_epoch  <- NA
+    init_mu_kmeans(
+      model,
+      outputs_train = train_outputs,
+      n_mixtures = n_mixtures,
+      constant_attr = constant_attr,
+      device = device
+    )
+    start_epoch <- 1L
+    train_loss_history <- rep(NA_real_, history_length)
+    val_loss_history <- rep(NA_real_, history_length)
+    best_val_loss <- Inf
+    best_val_epoch <- NA_integer_
+    no_improve_epochs <- 0L
+    best_train_loss <- Inf
+    best_train_epoch <- NA_integer_
   }
+
   # Adam optimizer
-  img_params    <- if (!is.null(model$image_module))   model$image_module$parameters   else list()
-  tab_params    <- if (!is.null(model$tabular_module)) model$tabular_module$parameters else list()
-  fusion_params <- if (!is.null(model$fusion_module)) model$fusion_module$parameters else list()
+  img_params <- if (!is.null(model$image_module)) {
+    model$image_module$parameters
+  } else list()
+  tab_params <- if (!is.null(model$tabular_module)) {
+    model$tabular_module$parameters
+  } else list()
+  fusion_params <- if (!is.null(model$fusion_module)) {
+    model$fusion_module$parameters
+  } else list()
   hidden_params <- if (!is.null(model$hidden)) model$hidden$parameters else list()
-  all_params    <- model$parameters
-  feat_params   <- c(img_params, tab_params, fusion_params, hidden_params)
-  head_params   <- setdiff(all_params, feat_params)
+  all_params <- model$parameters
+  feat_params <- c(img_params, tab_params, fusion_params, hidden_params)
+  head_params <- setdiff(all_params, feat_params)
   optimizer <- optim_adam(
     params = list(
       list(params = img_params, weight_decay = wd_image),
@@ -1291,15 +1458,46 @@ train_mst_pmdn <- function(inputs,
     ),
     lr = lr
   )
-  # Restore optimizer state if resuming from checkpoint (but not for new
-  # phase/fine-tune)
-  if (!is.null(checkpoint) && is.null(model)) {
-    optimizer$load_state_dict(checkpoint$optimizer_state_dict)
+  if (resuming) {
+    if (is.null(checkpoint$optimizer_state_dict)) {
+      warning("Checkpoint has no optimizer state; optimizer starts fresh.")
+    } else {
+      optimizer$load_state_dict(checkpoint$optimizer_state_dict)
+    }
   }
 
-  best_train_checkpoint_path <- sub("\\.pt$", "_trainbest.pt", checkpoint_path)
-  if (identical(best_train_checkpoint_path, checkpoint_path))
-    best_train_checkpoint_path <- paste0(checkpoint_path, "_trainbest")
+  best_checkpoint_path <- derive_checkpoint_path(checkpoint_path, "_best")
+  best_train_checkpoint_path <- derive_checkpoint_path(
+    checkpoint_path, "_trainbest"
+  )
+
+  make_checkpoint <- function(epoch) {
+    list(
+      schema_version = 2L,
+      epoch = as.integer(epoch),
+      model_state_dict = model$state_dict(),
+      optimizer_state_dict = optimizer$state_dict(),
+      best_val_loss = best_val_loss,
+      best_val_epoch = best_val_epoch,
+      no_improve_epochs = no_improve_epochs,
+      best_train_loss = best_train_loss,
+      best_train_epoch = best_train_epoch,
+      train_loss_history = train_loss_history,
+      val_loss_history = val_loss_history,
+      train_indices = train_indices,
+      val_indices = val_indices,
+      data_signature = list(
+        n_total = n_total,
+        input_dim = input_dim,
+        output_dim = output_dim,
+        n_mixtures = n_mixtures,
+        constraint = constraint,
+        constant_attr = constant_attr
+      ),
+      rng_state = capture_training_rng_state()
+    )
+  }
+
   # Dataloaders
   dataset_fn <- function(inp, img_inp, outp) {
     if (is.null(img_inp)) {
@@ -1310,8 +1508,12 @@ train_mst_pmdn <- function(inputs,
       )(inp, outp)
     } else {
       dataset(
-        initialize = function(x, im, y) { self$x <- x; self$im <- im; self$y <- y },
-        .getitem = function(idx) list(self$x[idx, ], self$im[idx, ], self$y[idx, ]),
+        initialize = function(x, im, y) {
+          self$x <- x; self$im <- im; self$y <- y
+        },
+        .getitem = function(idx) {
+          list(self$x[idx, ], self$im[idx, ], self$y[idx, ])
+        },
         .length = function() self$x$size(1)
       )(inp, img_inp, outp)
     }
@@ -1319,178 +1521,203 @@ train_mst_pmdn <- function(inputs,
   should_drop_last_batch <- function(n_samples, batch_size, min_frac) {
     remainder <- n_samples %% batch_size
     min_last_batch_size <- ceiling(batch_size * min_frac)
-    n_samples > batch_size && remainder > 0 && remainder < min_last_batch_size
+    n_samples > batch_size && remainder > 0 &&
+      remainder < min_last_batch_size
   }
-
   train_dataset <- dataset_fn(train_inputs, train_image_inputs, train_outputs)
-  drop_last_train <- should_drop_last_batch(length(train_indices), batch_size, min_last_batch_frac)
-  train_loader  <- dataloader(train_dataset, batch_size = batch_size, shuffle = TRUE, drop_last = drop_last_train)
+  drop_last_train <- should_drop_last_batch(
+    length(train_indices), batch_size, min_last_batch_frac
+  )
+  train_loader <- dataloader(
+    train_dataset,
+    batch_size = batch_size,
+    shuffle = TRUE,
+    drop_last = drop_last_train
+  )
   if (!is.null(val_inputs)) {
     val_dataset <- dataset_fn(val_inputs, val_image_inputs, val_outputs)
-    drop_last_val <- should_drop_last_batch(length(val_indices), batch_size, min_last_batch_frac)
-    val_loader  <- dataloader(val_dataset, batch_size = batch_size, shuffle = FALSE, drop_last = drop_last_val)
+    val_loader <- dataloader(
+      val_dataset,
+      batch_size = batch_size,
+      shuffle = FALSE,
+      drop_last = FALSE
+    )
   }
-  # Training loop
-  final_epoch <- NA
-  for (epoch in seq.int(start_epoch, epochs)) {
+  if (resuming && !restore_training_rng_state(checkpoint$rng_state)) {
+    warning("Legacy checkpoint has no RNG state; exact resumption is not possible.")
+  }
+
+  # Training loop. Loss histories are observation-weighted so their values do
+  # not depend on the size of the final batch.
+  completed_epoch <- if (resuming) as.integer(checkpoint$epoch) else 0L
+  epoch_sequence <- if (start_epoch <= epochs) {
+    seq.int(start_epoch, epochs)
+  } else {
+    integer(0)
+  }
+  for (epoch in epoch_sequence) {
     model$train()
-    total_loss  <- 0
-    batch_count <- 0
+    total_loss <- 0
+    train_cases <- 0L
     coro::loop(for (batch in train_loader) {
       optimizer$zero_grad()
       if (length(batch) == 3) {
-        inputs_batch       <- batch[[1]]
+        inputs_batch <- batch[[1]]
         image_inputs_batch <- batch[[2]]
-        outputs_batch      <- batch[[3]]
+        outputs_batch <- batch[[3]]
         pred <- model(inputs_batch, image_inputs_batch)
       } else {
-        inputs_batch  <- batch[[1]]
+        inputs_batch <- batch[[1]]
         outputs_batch <- batch[[2]]
         pred <- model(inputs_batch)
       }
-      loss <- loss_mst_pmdn(pred, outputs_batch,
-                             lambda_alpha = lambda_alpha,
-                             lambda_nu_inv = lambda_nu_inv)
+      loss <- loss_mst_pmdn(
+        pred,
+        outputs_batch,
+        lambda_alpha = lambda_alpha,
+        lambda_nu_inv = lambda_nu_inv
+      )
       loss$backward()
-      if (!is.null(max_norm)) nn_utils_clip_grad_norm_(model$parameters, max_norm)
+      if (!is.null(max_norm))
+        nn_utils_clip_grad_norm_(model$parameters, max_norm)
       optimizer$step()
-      total_loss  <- total_loss + loss$item()
-      batch_count <- batch_count + 1
+      batch_cases <- outputs_batch$size(1)
+      total_loss <- total_loss + loss$item() * batch_cases
+      train_cases <- train_cases + batch_cases
     })
-    avg_train_loss <- total_loss / batch_count
+    if (train_cases == 0)
+      stop("No training cases were evaluated")
+    avg_train_loss <- total_loss / train_cases
     train_loss_history[epoch] <- avg_train_loss
-    # Validation
+    completed_epoch <- epoch
+
     if (!is.null(val_inputs)) {
       model$eval()
       total_val_loss <- 0
-      val_batches    <- 0
+      val_cases <- 0L
       with_no_grad({
         coro::loop(for (batch in val_loader) {
           if (length(batch) == 3) {
-            inputs_batch       <- batch[[1]]
+            inputs_batch <- batch[[1]]
             image_inputs_batch <- batch[[2]]
-            outputs_batch      <- batch[[3]]
+            outputs_batch <- batch[[3]]
             pred <- model(inputs_batch, image_inputs_batch)
           } else {
-            inputs_batch  <- batch[[1]]
+            inputs_batch <- batch[[1]]
             outputs_batch <- batch[[2]]
             pred <- model(inputs_batch)
           }
-          loss <- loss_mst_pmdn(pred, outputs_batch,
-                                 lambda_alpha = lambda_alpha,
-                                 lambda_nu_inv = lambda_nu_inv)
-          total_val_loss <- total_val_loss + loss$item()
-          val_batches    <- val_batches + 1
+          loss <- loss_mst_pmdn(
+            pred,
+            outputs_batch,
+            lambda_alpha = lambda_alpha,
+            lambda_nu_inv = lambda_nu_inv
+          )
+          batch_cases <- outputs_batch$size(1)
+          total_val_loss <- total_val_loss + loss$item() * batch_cases
+          val_cases <- val_cases + batch_cases
         })
       })
-      avg_val_loss <- total_val_loss / val_batches
+      if (val_cases != length(val_indices))
+        stop("Validation loader did not evaluate every validation case")
+      avg_val_loss <- total_val_loss / val_cases
       val_loss_history[epoch] <- avg_val_loss
-      cat(sprintf("Epoch %d - Train Loss: %.4f - Val Loss: %.4f\n", epoch, avg_train_loss, avg_val_loss))
-      # Early stopping logic
+      cat(sprintf(
+        "Epoch %d - Train Loss: %.4f - Val Loss: %.4f\n",
+        epoch, avg_train_loss, avg_val_loss
+      ))
       if (avg_val_loss < best_val_loss) {
-        best_val_loss     <- avg_val_loss
-        best_val_epoch    <- epoch
-        no_improve_epochs <- 0
-        checkpoint <- list(
-          epoch                = epoch,
-          model_state_dict     = model$state_dict(),
-          optimizer_state_dict = optimizer$state_dict(),
-          best_val_loss        = best_val_loss,
-          best_val_epoch       = best_val_epoch,
-          no_improve_epochs    = no_improve_epochs,
-          train_loss_history   = train_loss_history,
-          val_loss_history     = val_loss_history
-        )
-        torch_save(checkpoint, checkpoint_path)
-        cat(sprintf("Checkpoint saved at epoch %d (best_val_loss=%.4f)\n", epoch, best_val_loss))
+        best_val_loss <- avg_val_loss
+        best_val_epoch <- epoch
+        no_improve_epochs <- 0L
+        torch_save(make_checkpoint(epoch), best_checkpoint_path)
+        cat(sprintf(
+          "Best checkpoint saved at epoch %d (best_val_loss=%.4f).\n",
+          epoch, best_val_loss
+        ))
       } else {
-        no_improve_epochs <- no_improve_epochs + 1
-      }
-      if (no_improve_epochs >= early_stopping_patience) {
-        cat(sprintf("Early stopping triggered at epoch %d (no improvement for %d epochs).\n", epoch, early_stopping_patience))
-        final_epoch <- epoch
-        break
-      }
-      # Periodic checkpoint
-      if (epoch %% checkpoint_interval == 0) {
-        checkpoint <- list(
-          epoch                = epoch,
-          model_state_dict     = model$state_dict(),
-          optimizer_state_dict = optimizer$state_dict(),
-          best_val_loss        = best_val_loss,
-          best_val_epoch       = best_val_epoch,
-          no_improve_epochs    = no_improve_epochs,
-          train_loss_history   = train_loss_history,
-          val_loss_history     = val_loss_history
-        )
-        torch_save(checkpoint, checkpoint_path)
-        cat(sprintf("Periodic checkpoint saved at epoch %d.\n", epoch))
-      }
-      # Scheduler step
-      if (!is.null(scheduler_step) && (epoch %% scheduler_step == 0)) {
-        for (group in optimizer$param_groups) group$lr <- group$lr * scheduler_gamma
-        cat(sprintf("Learning rate updated at epoch %d.\n", epoch))
+        no_improve_epochs <- no_improve_epochs + 1L
       }
     } else {
       cat(sprintf("Epoch %d - Train Loss: %.4f\n", epoch, avg_train_loss))
       if (avg_train_loss < best_train_loss) {
-        best_train_loss  <- avg_train_loss
+        best_train_loss <- avg_train_loss
         best_train_epoch <- epoch
-        checkpoint <- list(
-          epoch                = epoch,
-          model_state_dict     = model$state_dict(),
-          optimizer_state_dict = optimizer$state_dict(),
-          best_train_loss      = best_train_loss,
-          best_train_epoch     = best_train_epoch,
-          train_loss_history   = train_loss_history
-        )
-        torch_save(checkpoint, best_train_checkpoint_path)
-        cat(sprintf("Best training checkpoint saved at epoch %d (loss=%.4f)\n", epoch, best_train_loss))
-      }
-      if (epoch %% checkpoint_interval == 0) {
-        checkpoint <- list(
-          epoch                = epoch,
-          model_state_dict     = model$state_dict(),
-          optimizer_state_dict = optimizer$state_dict(),
-          best_train_loss      = best_train_loss,
-          best_train_epoch     = best_train_epoch,
-          train_loss_history   = train_loss_history
-        )
-        torch_save(checkpoint, checkpoint_path)
-        cat(sprintf("Periodic checkpoint saved at epoch %d.\n", epoch))
-      }
-      if (!is.null(scheduler_step) && (epoch %% scheduler_step == 0)) {
-        for (group in optimizer$param_groups) group$lr <- group$lr * scheduler_gamma
-        cat(sprintf("Learning rate updated at epoch %d.\n", epoch))
+        torch_save(make_checkpoint(epoch), best_train_checkpoint_path)
+        cat(sprintf(
+          "Best training checkpoint saved at epoch %d (loss=%.4f).\n",
+          epoch, best_train_loss
+        ))
       }
     }
-  } # End epoch loop
-  if (is.na(final_epoch)) final_epoch <- if (exists("epoch")) epoch else epochs
-  # Reload best checkpoint
-  if (!is.null(val_inputs) && file.exists(checkpoint_path)) {
-    checkpoint <- torch_load(checkpoint_path)
-    model$load_state_dict(checkpoint$model_state_dict)
-    cat("Best model loaded from validation-based checkpoint.\n")
-    best_val_loss     <- checkpoint$best_val_loss
-    best_val_epoch    <- checkpoint$best_val_epoch
-  } else if (is.null(val_inputs) && file.exists(best_train_checkpoint_path)) {
-    checkpoint <- torch_load(best_train_checkpoint_path)
-    model$load_state_dict(checkpoint$model_state_dict)
-    cat("Best model loaded from training-based checkpoint.\n")
-    best_train_loss  <- checkpoint$best_train_loss
-    best_train_epoch <- checkpoint$best_train_epoch
+
+    # Apply the scheduled decay before saving the resumable state so the
+    # restored optimizer has the learning rate for the following epoch.
+    if (!is.null(scheduler_step) && epoch %% scheduler_step == 0) {
+      for (group in optimizer$param_groups)
+        group$lr <- group$lr * scheduler_gamma
+      cat(sprintf("Learning rate updated at epoch %d.\n", epoch))
+    }
+    if (epoch %% checkpoint_interval == 0) {
+      torch_save(make_checkpoint(epoch), checkpoint_path)
+      cat(sprintf("Latest checkpoint saved at epoch %d.\n", epoch))
+    }
+    if (!is.null(val_inputs) &&
+        no_improve_epochs >= early_stopping_patience) {
+      torch_save(make_checkpoint(epoch), checkpoint_path)
+      cat(sprintf(
+        paste0("Early stopping triggered at epoch %d ",
+               "(no improvement for %d epochs).\n"),
+        epoch, early_stopping_patience
+      ))
+      break
+    }
   }
+
+  final_epoch <- completed_epoch
+  if (final_epoch < 1)
+    stop("No training epoch is available")
+  # Always leave a current, resumable checkpoint before loading the best model.
+  torch_save(make_checkpoint(final_epoch), checkpoint_path)
+
+  if (!is.null(val_inputs) && file.exists(best_checkpoint_path)) {
+    best_checkpoint <- torch_load(best_checkpoint_path)
+    model$load_state_dict(best_checkpoint$model_state_dict)
+    best_val_loss <- best_checkpoint$best_val_loss
+    best_val_epoch <- best_checkpoint$best_val_epoch
+    cat("Best model loaded from validation-based checkpoint.\n")
+  } else if (is.null(val_inputs) &&
+             file.exists(best_train_checkpoint_path)) {
+    best_checkpoint <- torch_load(best_train_checkpoint_path)
+    model$load_state_dict(best_checkpoint$model_state_dict)
+    best_train_loss <- best_checkpoint$best_train_loss
+    best_train_epoch <- best_checkpoint$best_train_epoch
+    cat("Best model loaded from training-based checkpoint.\n")
+  } else {
+    warning("No best-model checkpoint was available; returning the latest model.")
+  }
+
   list(
-    model              = model,
-    train_loss_history = train_loss_history[1:final_epoch],
-    val_loss_history   = if (!is.null(val_inputs)) val_loss_history[1:final_epoch] else NULL,
-    best_val_epoch     = best_val_epoch,
-    best_val_loss      = if (!is.null(val_inputs)) best_val_loss else NULL,
-    best_train_epoch   = if (is.null(val_inputs)) best_train_epoch else NULL,
-    best_train_loss    = if (is.null(val_inputs)) best_train_loss else NULL,
-    final_epoch        = final_epoch,
-    train_indices      = train_indices,
-    val_indices        = val_indices
+    model = model,
+    train_loss_history = train_loss_history[seq_len(final_epoch)],
+    val_loss_history = if (!is.null(val_inputs)) {
+      val_loss_history[seq_len(final_epoch)]
+    } else {
+      NULL
+    },
+    best_val_epoch = best_val_epoch,
+    best_val_loss = if (!is.null(val_inputs)) best_val_loss else NULL,
+    best_train_epoch = if (is.null(val_inputs)) best_train_epoch else NULL,
+    best_train_loss = if (is.null(val_inputs)) best_train_loss else NULL,
+    final_epoch = final_epoch,
+    train_indices = train_indices,
+    val_indices = val_indices,
+    checkpoint_path = checkpoint_path,
+    best_checkpoint_path = if (!is.null(val_inputs)) {
+      best_checkpoint_path
+    } else {
+      best_train_checkpoint_path
+    }
   )
 }
 
@@ -1524,40 +1751,63 @@ predict_mst_pmdn <- function(model, new_inputs, image_inputs = NULL,
   }
 }
 
-scov_mst_pmdn <- function(pred, type = c("cov", "scale_chol"),
+scov_mst_pmdn <- function(pred, type = c("scale", "scale_chol", "cov"),
                           as_array = FALSE) {
-  # Compute scale or covariance matrix for each component
-  # from list returned by predict_mst_pmdn
-  # type: "cov" for covariance, "scale_chol" for its Cholesky factor
+  # Compute the scale matrix, its Cholesky factor, or the actual component
+  # covariance matrix from a list returned by predict_mst_pmdn.
   # as_array: TRUE to return an R array instead of a torch_tensor
   type <- match.arg(type)
-  L_val    <- pred$L      # [B, M, 1, 1]   (volume)
-  A_diag   <- pred$A      # [B, M, d]      (shape, diagonal)
-  D_tensor <- pred$D      # [B, M, d, d]   (orientation)
-  device <- L_val$device
-  A_diag   <- A_diag$to(device = device)
-  D_tensor <- D_tensor$to(device = device)
-  B <- L_val$size(1)
-  M <- L_val$size(2)
-  d <- A_diag$size(3)
-  L_val  <- torch_clamp(L_val,  min = 1e-12)
-  A_diag <- torch_clamp(A_diag, min = 1e-12)
-  lambda_half <- torch_sqrt(L_val)                # [B, M, 1, 1]
-  sqrtA       <- torch_sqrt(A_diag)               # [B, M, d]
-  sqrtA_mats  <- torch_diag_embed(sqrtA)          # [B, M, d, d]
-  # Cholesky-like factor from LAD
-  L_direct <- torch_matmul(D_tensor, sqrtA_mats)  # [B, M, d, d]
-  L_direct <- lambda_half * L_direct              # [B, M, d, d]
-  # Scale or covariance matrix
-  Sigma <- torch_matmul(L_direct,
-                        L_direct$transpose(-2L, -1L))  # [B, M, d, d]
-  if (type == "cov") {
-    out <- Sigma
-  } else {  # "scale_chol"
-    out <- linalg_cholesky(Sigma)
+  required_fields <- c("scale_chol", "nu", "alpha")
+  if (!all(required_fields %in% names(pred))) {
+    stop("pred must contain scale_chol, nu, and alpha.")
+  }
+  scale_chol <- pred$scale_chol
+  device <- scale_chol$device
+  nu <- pred$nu$to(device = device)
+  alpha <- pred$alpha$to(device = device)
+  d <- scale_chol$size(3)
+  if (type == "scale_chol") {
+    out <- scale_chol
+  } else {
+    scale <- torch_matmul(
+      scale_chol,
+      scale_chol$transpose(-2L, -1L)
+    )
+    if (type == "scale") {
+      out <- scale
+    } else {
+      # For the canonical skew-t representation used by the likelihood,
+      # delta = alpha / sqrt(1 + alpha^T alpha) and
+      # Cov(Y) = C [nu/(nu-2) I - b_nu^2 delta delta^T] C^T,
+      # where C is scale_chol and
+      # b_nu = sqrt(nu/pi) Gamma((nu-1)/2) / Gamma(nu/2).
+      invalid <- nu <= 2
+      if (invalid$any()$item()) {
+        warning("Component covariance is undefined for nu <= 2; returning NaN for those components.")
+      }
+      nu_safe <- nu$clamp(min = 2 + 1e-6)
+      alpha_norm_sq <- alpha$pow(2)$sum(dim = -1, keepdim = TRUE)
+      delta <- alpha / torch_sqrt(1 + alpha_norm_sq)
+      log_b_nu <- 0.5 * (torch_log(nu_safe) -
+        torch_log(torch_tensor(pi, device = device, dtype = nu_safe$dtype))) +
+        torch_lgamma((nu_safe - 1) / 2) - torch_lgamma(nu_safe / 2)
+      b_nu_sq <- torch_exp(2 * log_b_nu)$unsqueeze(-1)$unsqueeze(-1)
+      eye_mat <- torch_eye(d, device = device, dtype = scale_chol$dtype)$
+        unsqueeze(1)$unsqueeze(1)$expand(scale_chol$size())
+      delta_outer <- delta$unsqueeze(-1) * delta$unsqueeze(-2)
+      standardized_cov <-
+        (nu_safe / (nu_safe - 2))$unsqueeze(-1)$unsqueeze(-1) * eye_mat -
+        b_nu_sq * delta_outer
+      out <- torch_matmul(
+        torch_matmul(scale_chol, standardized_cov),
+        scale_chol$transpose(-2L, -1L)
+      )
+      invalid_expanded <- invalid$unsqueeze(-1)$unsqueeze(-1)$expand(out$size())
+      out <- out$masked_fill(invalid_expanded, NaN)
+    }
   }
   if (as_array) {
-    out <- as_array(out$to(device = "cpu"))
+    out <- torch::as_array(out$to(device = "cpu"))
   }
   out
 }
