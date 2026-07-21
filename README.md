@@ -421,7 +421,7 @@ Banfield, J. D., & Raftery, A. E. (1993). Model-based Gaussian and non-Gaussian 
  
 Celeux, G., & Govaert, G. (1995). Gaussian parsimonious clustering models. Pattern Recognition, 28(5), 781-793. 
 
-Falbel D., & Luraschi, J. (2025). torch: Tensors and Neural Networks with 'GPU' Acceleration. R package version 0.14.2, https://github.com/mlverse/torch, https://torch.mlverse.org/docs.
+Falbel D., & Luraschi, J. (2026). torch: Tensors and Neural Networks with 'GPU' Acceleration. R package version 0.17.0, doi:10.32614/CRAN.package.torch
 
 Fraley, C., & Raftery, A. E. (2002). Model-based clustering, discriminant analysis, and density estimation. Journal of the American Statistical Association, 97(458), 611-631. 
  
