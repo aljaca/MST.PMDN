@@ -29,15 +29,15 @@ define_mst_pmdn(
 \arguments{
   \item{input_dim}{Integer. Number of features in the raw tabular input (used if \code{tabular_module} is \code{NULL}).}
   \item{output_dim}{Integer. Dimension \code{d} of the multivariate response.}
-  \item{hidden_dim}{Integer vector. Sizes of hidden layers in the dense fusion network.}
+  \item{hidden_dim}{Integer vector. Layer widths in the default dense MLP. When \code{fusion_module} is supplied, these values create no layers; the final value is used only if the fusion output dimension cannot be inferred.}
   \item{n_mixtures}{Integer. Number of skew t mixture components \code{M}.}
   \item{constraint}{Character. Code for volume–shape–orientation, degrees of freedom \code{nu}, and skew constraints (e.g., “\code{VVVFN}”).}
   \item{constant_attr}{Character. Flags for parameters held constant (e.g., “\code{m}” for skew-t locations, “\code{s}” for skew, etc.).}
-  \item{activation}{Function. \pkg{torch} activation for hidden layers (default \code{nn_relu}).}
-  \item{drop_hidden}{Numeric between 0 and 1. Dropout probability after each hidden layer; when \code{fusion_module} is provided, this dropout is applied to the fusion output.}
+  \item{activation}{Function or list of functions. \pkg{torch} activation applied after each non-final layer of the default dense MLP (default \code{nn_relu}). Ignored when \code{fusion_module} is supplied.}
+  \item{drop_hidden}{Numeric between 0 and 1. Dropout probability after each non-final layer of the default dense MLP. When \code{fusion_module} is supplied, dropout is applied once to the fusion output.}
   \item{image_module}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
   \item{tabular_module}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
-  \item{fusion_module}{Optional \pkg{torch} \code{nn_module} that fuses tabular and image features. When provided, it replaces the default concatenation + MLP fusion network.}
+  \item{fusion_module}{Optional \pkg{torch} \code{nn_module} that fuses tabular and image features. When supplied, it bypasses the default dense MLP; after optional \code{drop_hidden} dropout, its output is passed directly to the parameter-prediction heads. The output width is inferred from \code{output_dim}, \code{out_features}, \code{out_channels}, or \code{out_dim}; the final \code{hidden_dim} value is used as a fallback.}
   \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. If non-\code{NULL}, fixes degrees of freedom for each component.}
   \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}. Defaults to \code{c(3, 500)} to allow a tighter normal approximation in the tails.}
   \item{max_alpha}{Numeric. Absolute bound for skewness parameter.}
