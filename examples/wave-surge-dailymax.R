@@ -371,7 +371,7 @@ fusion_module <- nn_module(
   }
 )
 
-hidden_dim <- c(64, 32)
+hidden_dim <- integer(0) # No default MLP; fusion_mod declares output_dim = 32
 drop_hidden <- 0.2
 fusion_mod <- fusion_module(
   tabular_dim = tabular_mod$output_dim,
