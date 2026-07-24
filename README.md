@@ -212,8 +212,8 @@ image_mod <- image_module(
 
 # Define the fusion network, MST-PMDN head, and training setup
 # Note: hyperparameters and number of epochs are not optimized
-hidden_dim <- c(64, 32) # Hidden nodes in fusion network
-drop_hidden <- 0.1      # Dropout for fusion network
+hidden_dim <- c(64, 32) # Layer widths in the default dense MLP
+drop_hidden <- 0.1      # Dropout between non-final MLP layers
 n_mixtures <- 2         # 2 components in the MST mixture model
 constraint <- "VVIFN"   # LAD = "V"ariable-"V"ariable-"I"dentity; nu = 1 component "F"ixed; skewness = "N"ormal
 fixed_nu <- c(500, NA)  # nu = 500 for 1st component (i.e., approximately "N"ormal); "V"ariable for 2nd
@@ -309,7 +309,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 *   **Purpose:** Implements a linear layer with weight normalization.
 *   **Method:** Decomposes the weight matrix `W` into a direction `V` and a magnitude `g`, learning these instead of `W` directly.
-*   **Context:** Used for most linear layers within the network architecture (hidden layers and parameter prediction heads) to potentially improve training stability and convergence speed.
+*   **Context:** Used for the MST-PMDN parameter-prediction heads. The default hidden MLP uses `nn_linear` layers; each non-final layer is followed by batch normalization, activation, and dropout.
 
 #### Function: `init_weight_norm(module)`
 
@@ -322,7 +322,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Purpose:** Defines the main MST-PMDN neural network architecture.
 *   **Method:**
     *   Processes optional image and tabular inputs through dedicated modules or uses raw inputs.
-    *   Applies an optional fusion module (when provided), followed by an optional dropout, or concatenates features and passes them through a hidden MLP using `weight_norm_linear` layers.
+    *   When a fusion module is supplied, its output receives the optional `drop_hidden` dropout and is passed directly to the parameter-prediction heads. Otherwise, extracted features are concatenated and processed by a default hidden MLP constructed from `nn_linear` layers. In the custom-fusion case, `hidden_dim` creates no hidden layers and its final value is used only as a fallback for determining the fusion output dimension.
     *   Predicts mixture parameters (`pi`, `mu`, `L`, `A`, `D`, `nu`, `alpha`) using separate output heads (mostly `weight_norm_linear` or `nn_parameter` if constant).
     *   Applies constraints (Variable, Equal, Identity, Normal approx., Fixed) to parameters based on configuration.
     *   Constructs the full scale matrix `Sigma = L * D * diag(A) * D^T` and computes its Cholesky decomposition (`scale_chol`) for each component.
