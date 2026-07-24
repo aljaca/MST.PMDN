@@ -48,7 +48,7 @@ train_mst_pmdn(
 \arguments{
   \item{inputs}{Numeric matrix or \code{\link[torch]{torch_tensor}} of predictors (rows = cases).}
   \item{outputs}{Numeric matrix or \code{\link[torch]{torch_tensor}} of responses (rows = cases).}
-  \item{hidden_dim}{Integer vector giving the sizes of the hidden layers in the fusion network.}
+  \item{hidden_dim}{Integer vector giving the layer widths in the default dense MLP. When \code{fusion_module} is supplied, these values create no layers; the final value is used only if the fusion output dimension cannot be inferred.}
   \item{n_mixtures}{Integer; number of mixture components \code{M}.}
   \item{constraint}{Character; MST-PMDN constraint code (volume–shape–orientation, degrees of freedon \code{nu}, and skew), e.g. \code{"VVVFN"}.}
   \item{constant_attr}{Character; flags for parameters held constant ("m" for skew-t locations, "x" for mixing coefficients, "L" for volume, "A" for shape, "D" for orientation, "n" for degrees of freedom \code{nu}, and "s" for skew).}
@@ -58,14 +58,14 @@ train_mst_pmdn(
   \item{min_vol_shape}{Numeric; minimum allowed volume (L) and shape (A) diagonal values.}
   \item{min_mix_weight}{Numeric; minimum mixture weight per component.}
   \item{jitter}{Numeric; small ridge added to covariance diagonals for stability.}
-  \item{activation}{Activation function for hidden layers (e.g., \code{nn_tanh}, \code{nn_relu}).}
+  \item{activation}{Function or list of functions applied after each non-final layer of the default dense MLP (e.g., \code{nn_tanh}, \code{nn_relu}). Ignored when \code{fusion_module} is supplied.}
   \item{lambda_alpha}{Numeric; weight of an L2 penalty on the final skewness parameter \code{alpha}.}
   \item{lambda_nu_inv}{Numeric; weight of a penalty on \code{(1/nu)^2}.}
   \item{epochs}{Integer; maximum number of training epochs.}
   \item{lr}{Numeric; learning rate for the optimizer.}
   \item{batch_size}{Integer; mini-batch size.}
   \item{max_norm}{Numeric; maximum gradient norm for clipping.}
-  \item{drop_hidden}{Numeric in [0,1]; dropout probability after each hidden layer. When \code{fusion_module} is supplied, applies dropout to the fusion output.}
+  \item{drop_hidden}{Numeric in [0,1]; dropout probability after each non-final layer of the default dense MLP. When \code{fusion_module} is supplied, dropout is applied once to the fusion output.}
   \item{wd_image}{Numeric; weight decay (L2 penalty) for \code{image_module} parameters.}
   \item{wd_tabular}{Numeric; weight decay for \code{tabular_module} parameters.}
   \item{checkpoint_interval}{Integer; number of epochs between saved checkpoints.}
@@ -80,7 +80,7 @@ train_mst_pmdn(
   \item{image_inputs}{Optional array or \code{torch_tensor} of image data (4D) for multimodal models.}
   \item{image_module}{Optional \code{nn_module} for processing \code{image_inputs}.}
   \item{tabular_module}{Optional \code{nn_module} for processing \code{inputs}.}
-  \item{fusion_module}{Optional \code{nn_module} for fusing tabular and image features before the MST-PMDN head.}
+  \item{fusion_module}{Optional \code{nn_module} for fusing tabular and image features. When supplied, it bypasses the default dense MLP; after optional \code{drop_hidden} dropout, its output is passed directly to the MST-PMDN parameter heads. The output width is inferred from \code{output_dim}, \code{out_features}, \code{out_channels}, or \code{out_dim}; the final \code{hidden_dim} value is used as a fallback.}
   \item{min_last_batch_frac}{Numeric in [0,1]; drop the final incomplete training mini-batch only when its size is smaller than \code{ceiling(batch_size * min_last_batch_frac)}. Validation always evaluates every case.}
   \item{device}{Character; torch device to use (e.g., \code{"cpu"} or \code{"cuda"}).}
 }
