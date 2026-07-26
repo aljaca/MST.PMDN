@@ -120,5 +120,7 @@ test_that("checkpoint resume reproduces uninterrupted training", {
   best <- torch::torch_load(fit_resumed$best_checkpoint_path)
   expect_equal(latest$epoch, 4L)
   expect_equal(best$epoch, fit_resumed$best_val_epoch)
+  expect_null(latest$schema_version)
+  expect_null(best$schema_version)
   expect_false(identical(resumed_path, fit_resumed$best_checkpoint_path))
 })

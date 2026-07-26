@@ -39,7 +39,7 @@ define_mst_pmdn(
   \item{tabular_module}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
   \item{fusion_module}{Optional \pkg{torch} \code{nn_module} that fuses tabular and image features. When supplied, it bypasses the default dense MLP; after optional \code{drop_hidden} dropout, its output is passed directly to the parameter-prediction heads. The output width is inferred from \code{output_dim}, \code{out_features}, \code{out_channels}, or \code{out_dim}; the final \code{hidden_dim} value is used as a fallback.}
   \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. If non-\code{NULL}, fixes degrees of freedom for each component.}
-  \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}. Defaults to \code{c(3, 500)} to allow a tighter normal approximation in the tails.}
+  \item{range_nu}{Numeric vector of length 2: \code{c(min_nu, max_nu)} to clamp learned \code{nu}. Defaults to \code{c(3, 500)} to bound optimization while allowing a broad range of tail heaviness.}
   \item{max_alpha}{Numeric. Absolute bound for skewness parameter.}
   \item{min_vol_shape}{Numeric. Minimum allowed value for volume (L) and shape (A) diagonal parameters.}
   \item{min_mix_weight}{Numeric. Floor for each mixture weight to avoid zero probabilities.}
