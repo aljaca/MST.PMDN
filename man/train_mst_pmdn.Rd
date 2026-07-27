@@ -52,7 +52,7 @@ train_mst_pmdn(
   \item{n_mixtures}{Integer; number of mixture components \code{M}.}
   \item{constraint}{Character; MST-PMDN constraint code (volume–shape–orientation, degrees of freedom \code{nu}, and skew), e.g. \code{"VVVFN"}. An \code{"N"} degrees-of-freedom constraint selects the exact Gaussian/skew-normal limit.}
   \item{constant_attr}{Character; flags for parameters held constant ("m" for skew-t locations, "x" for mixing coefficients, "L" for volume, "A" for shape, "D" for orientation, "n" for degrees of freedom \code{nu}, and "s" for skew).}
-  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. Under an \code{"F"} degrees-of-freedom constraint, positive finite entries are fixed Student-t degrees of freedom, \code{Inf} selects an exact Gaussian/skew-normal component, and \code{NA} selects a learned finite-\code{nu} component.}
+  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. Under an \code{"F"} degrees-of-freedom constraint, positive finite entries are fixed Student-t degrees of freedom, \code{Inf} selects an exact Gaussian/skew-normal component, and \code{NA} selects a learned finite-\code{nu} component. Fixed values are not clipped to \code{range_nu}; that range applies only to learned degrees of freedom.}
   \item{range_nu}{Two increasing positive finite values bounding learned \code{nu}. Defaults to \code{c(3, 50)} so initialization and most of the sigmoid range remain in the statistically informative finite-tail regime.}
   \item{max_alpha}{Numeric; maximum absolute skewness parameter.}
   \item{min_vol_shape}{Numeric; minimum allowed volume (L) and shape (A) diagonal values.}

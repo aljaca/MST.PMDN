@@ -38,7 +38,7 @@ define_mst_pmdn(
   \item{image_module}{A \pkg{torch} \code{nn_module} for image feature extraction, or \code{NULL} to omit.}
   \item{tabular_module}{A \pkg{torch} \code{nn_module} for tabular feature extraction, or \code{NULL} to use raw inputs.}
   \item{fusion_module}{Optional \pkg{torch} \code{nn_module} that fuses tabular and image features. When supplied, it bypasses the default dense MLP; after optional \code{drop_hidden} dropout, its output is passed directly to the parameter-prediction heads. The output width is inferred from \code{output_dim}, \code{out_features}, \code{out_channels}, or \code{out_dim}; the final \code{hidden_dim} value is used as a fallback.}
-  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. Under an \code{"F"} degrees-of-freedom constraint, each entry may be a positive finite value, \code{Inf} for an exact Gaussian/skew-normal component, or \code{NA} for a learned finite-\code{nu} component.}
+  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. Under an \code{"F"} degrees-of-freedom constraint, each entry may be a positive finite value, \code{Inf} for an exact Gaussian/skew-normal component, or \code{NA} for a learned finite-\code{nu} component. Fixed values are not clipped to \code{range_nu}; that range applies only to learned degrees of freedom.}
   \item{range_nu}{Two increasing positive finite values, \code{c(min_nu, max_nu)}, bounding learned \code{nu}. Defaults to \code{c(3, 50)} so initialization and most of the sigmoid range remain in the statistically informative finite-tail regime.}
   \item{max_alpha}{Numeric. Absolute bound for skewness parameter.}
   \item{min_vol_shape}{Numeric. Minimum allowed value for volume (L) and shape (A) diagonal parameters.}

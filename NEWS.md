@@ -17,6 +17,8 @@
 - Made the degrees-of-freedom `"N"` constraint an exact Gaussian/skew-normal
   limit and allowed `Inf` in `fixed_nu` for exact normal components within
   mixed fixed/learned models.
+- Made floating-point tensors created in the model forward pass inherit the
+  input dtype, including mixed fixed/learned degrees-of-freedom models.
 - Reduced the default learned degrees-of-freedom range from `c(3, 500)` to
   `c(3, 50)` and stabilized the multivariate t normalizing constant against
   float32 gamma-function cancellation.

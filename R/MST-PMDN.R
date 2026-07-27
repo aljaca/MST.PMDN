@@ -48,7 +48,7 @@ build_orthogonal_matrix <- function(params, dim) {
   # Helper for building an orthogonal orientation matrix
   dev <- params$device
   batch_size <- params$size(1)
-  X <- torch_zeros(batch_size, dim, dim, device = dev)
+  X <- torch_zeros(batch_size, dim, dim, dtype = params$dtype, device = dev)
   indices_orig <- torch_triu_indices(dim, dim, offset = 1,
                                      dtype = torch_long(), device = dev)
   row_indices_1d <- indices_orig[1, ]$to(dtype = torch_long())
@@ -724,7 +724,11 @@ define_mst_pmdn <- function(
       # Shape (A)
       # ---------
       if (self$shape_identity) {
-        A_diag <- torch_ones(c(B, self$n_mixtures, d), device = x$device)
+        A_diag <- torch_ones(
+          c(B, self$n_mixtures, d),
+          dtype = x$dtype,
+          device = x$device
+        )
       } else if (grepl("A", self$constant_attr)) {
         # Clamp logits and use soft-plus(+ε) to prevent under/overflow
         rawA <- self$A_param
@@ -761,7 +765,8 @@ define_mst_pmdn <- function(
       if (self$orientation_identity) {
         D_mats <- replicate(
           self$n_mixtures,
-          torch_eye(d, device = x$device)$unsqueeze(1)$expand(c(B, -1, -1)),
+          torch_eye(d, dtype = x$dtype, device = x$device)$
+            unsqueeze(1)$expand(c(B, -1, -1)),
           simplify = FALSE
         )
       } else {
@@ -807,7 +812,11 @@ define_mst_pmdn <- function(
         # Check if any components need optimization
         if (length(self$nu_opt_indices) > 0) {
           # Create a new tensor for nu values
-          nu <- torch_zeros(c(B, self$n_mixtures), device = x$device)
+          nu <- torch_zeros(
+            c(B, self$n_mixtures),
+            dtype = x$dtype,
+            device = x$device
+          )
           # Fill in the fixed values directly
           fixed_mask_exp <- self$fixed_nu_mask$unsqueeze(1)$expand(c(B, -1))
           nu$masked_scatter_(fixed_mask_exp,
@@ -867,7 +876,11 @@ define_mst_pmdn <- function(
       # Skewness (alpha)
       # ----------------
       if (self$skew_none) {
-        alpha <- torch_zeros(c(B, self$n_mixtures, d), device = x$device)
+        alpha <- torch_zeros(
+          c(B, self$n_mixtures, d),
+          dtype = x$dtype,
+          device = x$device
+        )
       } else {
         if (!is.null(self$alpha_param)) {
           if (self$skew_shared) {
@@ -898,8 +911,8 @@ define_mst_pmdn <- function(
       L_direct <- torch_matmul(D_tensor, sqrtA_mats)
       L_direct <- lambda_half * L_direct
       Sigma <- torch_matmul(L_direct, L_direct$transpose(-2, -1))
-      eye_mat <- torch_eye(d, device = x$device)$unsqueeze(1)$unsqueeze(1
-                           )$expand(c(B, self$n_mixtures, d, d))
+      eye_mat <- torch_eye(d, dtype = x$dtype, device = x$device)$
+        unsqueeze(1)$unsqueeze(1)$expand(c(B, self$n_mixtures, d, d))
       scale_chol <- linalg_cholesky(Sigma + self$jitter * eye_mat)
       # --------------------
       # Return named outputs
@@ -980,7 +993,11 @@ loss_mst_pmdn <- function(output, target,
     .log_normal_cdf(alpha_dot_w),
     log_pt(alpha_dot_w, nu_safe + d)
   )
-  log_skew_factor <- torch_log(torch_tensor(2.0, device = dev)) +
+  log_skew_factor <- torch_log(torch_tensor(
+    2.0,
+    dtype = mix_prob$dtype,
+    device = dev
+  )) +
                      log_skew_cdf
   log_component <- log_pdf + log_skew_factor # [B, M]
   # Mixture weighting and log-sum-exp for total log-likelihood

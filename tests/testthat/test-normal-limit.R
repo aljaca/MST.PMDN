@@ -29,6 +29,43 @@ test_that("normal constraints and fixed Inf use the exact limit", {
   expect_equal(mixed_nu[, 2], rep(26.5, 4), tolerance = 1e-6)
 })
 
+test_that("normal and mixed fixed nu paths preserve float64 dtype", {
+  x <- torch::torch_zeros(c(4, 2), dtype = torch::torch_double())
+  normal_model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 2,
+    hidden_dim = c(3),
+    n_mixtures = 2,
+    constraint = "VVINN"
+  )
+  normal_model <- normal_model$to(dtype = torch::torch_double())
+  normal_pred <- normal_model(x)
+  expect_identical(as.character(normal_pred$nu$dtype), "Double")
+
+  model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 2,
+    hidden_dim = c(3),
+    n_mixtures = 2,
+    constraint = "VVIFN",
+    constant_attr = "n",
+    fixed_nu = c(Inf, NA)
+  )
+  model <- model$to(dtype = torch::torch_double())
+  target <- torch::torch_zeros(c(4, 2), dtype = torch::torch_double())
+
+  pred <- model(x)
+  for (name in c("pi", "mu", "scale_chol", "nu", "alpha", "L", "A", "D")) {
+    expect_identical(as.character(pred[[name]]$dtype), "Double", info = name)
+  }
+
+  loss <- loss_mst_pmdn(pred, target)
+  expect_identical(as.character(loss$dtype), "Double")
+  expect_true(is.finite(loss$item()))
+  loss$backward()
+  expect_true(all(is.finite(normal_test_values(model$nu_param_partial$grad))))
+})
+
 test_that("degrees-of-freedom inputs are validated", {
   expect_no_error(
     define_mst_pmdn(

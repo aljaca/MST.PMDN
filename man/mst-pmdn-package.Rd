@@ -36,7 +36,9 @@ respectively, to each of the LADns attributes. In the case of n, users
 can specify \code{"F"}ixed values for nu by passing an optional \code{fixed_nu} 
 vector. Positive finite entries specify Student-t degrees of freedom,
 \code{Inf} selects an exact Gaussian/skew-normal component, and \code{NA}
-selects a component whose nu is learned over \code{range_nu}. Furthermore, values of mu (or
+selects a component whose nu is learned over \code{range_nu}. Fixed values
+are not clipped to \code{range_nu}; that range applies only to learned
+degrees of freedom. Furthermore, values of mu (or
 skew-t locations) (m), pi (or mixing coefficients) (x), volume-shape-orientation
 attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to 
 be independent of inputs by specifying any combination of 
