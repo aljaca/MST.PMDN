@@ -284,8 +284,8 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `t_cdf(z, nu)`
 
 *   **Purpose:** Calculates a differentiable approximation of the univariate Student's t cumulative distribution function (CDF).
-*   **Method:** Uses the Li–De Moor corrected normal approximation for `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases. Fully torch-compatible for use in autograd graphs.
-*   **Context:** Used within the loss function's skewness calculation to provide a fast, differentiable Student t CDF without switching between multiple implementations.
+*   **Method:** Uses Hill's transformed-normal approximation for `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases. A zero-safe factorization preserves gradients at the origin, while a direct, stable log-CDF path avoids lower-tail cancellation and probability flooring. The implementation is fully torch-compatible for use in autograd graphs.
+*   **Context:** Used within the loss function's skewness calculation to provide a fast, differentiable Student t log-CDF without switching between multiple implementations.
 
 #### Function: `sample_gamma(shape, scale, device)`
 
@@ -337,7 +337,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
         *   Standardizes residuals: `v = scale_chol_k^{-1} * diff`.
         *   Calculates squared Mahalanobis distance: `maha = ||v||^2`.
         *   Calculates the log-PDF of the symmetric multivariate t-distribution part using `maha`, `log_det(Sigma_k)`, and `nu_k`.
-        *   Calculates the skewness adjustment term `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`, where `w` is proportional to `v`, using `t_cdf`.
+        *   Calculates the skewness adjustment term `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`, where `w` is proportional to `v`, using the stable direct log-CDF path.
     *   Combines component log-densities using mixture weights `pi` via `logsumexp`.
     *   Returns the mean NLL over the batch.
     *   Optionally adds an L2 penalty on the final `alpha` values via `lambda_alpha`,

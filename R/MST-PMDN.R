@@ -88,14 +88,11 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
   }
 }
 
-# -----------------------------------------------------
-# Student-t CDF approximation (waiting for torch
-# for R implementation of torch.distributions.studentT)
-# -----------------------------------------------------
+# --------------------------------
+# Differentiable Student-t CDF
+# --------------------------------
 
-t_cdf <- function(z, nu) {
-  # Fast Student-t CDF based on Li–De Moor corrected normal
-  # approximation
+.coerce_t_cdf_inputs <- function(z, nu) {
   if (!inherits(z, "torch_tensor")) {
     z <- torch_tensor(z, dtype = torch_float())
   }
@@ -104,35 +101,114 @@ t_cdf <- function(z, nu) {
   } else {
     nu <- nu$to(dtype = z$dtype, device = z$device)
   }
-  dtype  <- z$dtype
+  list(z = z, nu = nu)
+}
+
+.hill_t_transform <- function(z, nu) {
+  # Hill's normalizing transformation, written without sign() or the
+  # removable singularity at z = 0.
+  dtype <- z$dtype
   device <- z$device
-  one  <- torch_tensor(1, dtype = dtype, device = device)
-  two  <- torch_tensor(2, dtype = dtype, device = device)
-  four <- torch_tensor(4, dtype = dtype, device = device)
+  one <- torch_tensor(1, dtype = dtype, device = device)
+  a <- nu - 0.5 * one
+  u <- z$pow(2) / nu
+  u_safe <- torch_where(u == 0, one, u)
+  log1p_u <- torch_log1p(u)
+  ratio_direct <- log1p_u / u_safe
+  ratio_series <- one - u / 2 + u$pow(2) / 3 - u$pow(3) / 4 +
+                  u$pow(4) / 5
+  log1p_ratio <- torch_where(u < 1e-4, ratio_series, ratio_direct)
+
+  # Brophy's algebraic form of Hill's three-term expansion. The signed
+  # leading term q is smooth through zero because log1p(u) / u is evaluated
+  # by its series there.
+  r <- a * log1p_u
+  b <- 48 * a$pow(2)
+  polynomial <- ((0.4 * r + 3.3 * one) * r + 24 * one) * r +
+                85.5 * one
+  correction <- one + (r + 3 * one) / b -
+                polynomial / (b * (0.8 * r$pow(2) + 100 * one + b))
+  q <- z * torch_sqrt((a / nu) * log1p_ratio)
+
+  q * correction
+}
+
+.log_normal_cdf <- function(z) {
+  # log(Phi(z)) without cancellation from 0.5 * (1 + erf(z / sqrt(2))).
+  # erfc is accurate through the range relevant to float32. The asymptotic
+  # branch keeps the result and its gradient finite beyond that range.
+  dtype <- z$dtype
+  device <- z$device
+  one <- torch_tensor(1, dtype = dtype, device = device)
+  half <- 0.5 * one
+  sqrt_two <- torch_tensor(sqrt(2), dtype = dtype, device = device)
+
+  # Clamp only the inactive erfc branch so it cannot underflow before
+  # torch_where selects the asymptotic result.
+  z_erfc <- torch_clamp(z, min = -10)
+  log_erfc <- torch_log(half) +
+              torch_log(torch_erfc(-z_erfc / sqrt_two))
+
+  abs_z <- torch_clamp(torch_abs(z), min = 1)
+  inv_z2 <- abs_z$pow(-2)
+  mills <- one - inv_z2 + 3 * inv_z2$pow(2) -
+           15 * inv_z2$pow(3) + 105 * inv_z2$pow(4)
+  log_asymptotic <- -0.5 * z$pow(2) - torch_log(abs_z) -
+                    0.5 * log(2 * pi) +
+                    torch_log(mills)
+
+  torch_where(z < -10, log_asymptotic, log_erfc)
+}
+
+.log_t1_cdf <- function(z) {
+  # The direct Cauchy expression loses precision for large negative z.
+  dtype <- z$dtype
+  device <- z$device
+  one <- torch_tensor(1, dtype = dtype, device = device)
   half <- 0.5 * one
   pi_t <- torch_tensor(pi, dtype = dtype, device = device)
-  z2 <- z$pow(2)
-  # Li & De Moor correction factor for nu >= 3
-  tau <- (four * nu + z2 - one) / (four * nu + two * z2)
-  z_eff <- tau * z
-  std_normal <- distr_normal(
-    loc   = torch_tensor(0, dtype = dtype, device = device),
-    scale = torch_tensor(1, dtype = dtype, device = device)
-  )
-  F_ge3 <- std_normal$cdf(z_eff)
-  # Exact CDFs for nu = 1, 2
-  F1 <- half + torch_atan(z) / pi_t
-  F2 <- half + z / (two * torch_sqrt(two + z2))
-  nu1_mask <- (nu == one)
-  nu2_mask <- (nu == two)
-  F <- F_ge3
-  F <- torch_where(nu2_mask, F2, F)
-  F <- torch_where(nu1_mask, F1, F)
-  F
+  negative_tail <- z < -1
+  z_tail <- torch_where(negative_tail, z, -one)
+  z_direct <- torch_clamp(z, min = -1)
+  log_tail <- torch_log(torch_atan(-one / z_tail) / pi_t)
+  log_direct <- torch_log(half + torch_atan(z_direct) / pi_t)
+  torch_where(negative_tail, log_tail, log_direct)
+}
+
+.log_t2_cdf <- function(z) {
+  # Use an algebraically equivalent lower-tail expression when z is negative
+  # to avoid subtracting nearly equal values.
+  dtype <- z$dtype
+  device <- z$device
+  one <- torch_tensor(1, dtype = dtype, device = device)
+  two <- 2 * one
+  half <- 0.5 * one
+  negative_tail <- z < -1
+  z_tail <- torch_where(negative_tail, z, -one)
+  root_tail <- torch_sqrt(two + z_tail$pow(2))
+  log_tail <- -torch_log(root_tail) - torch_log(root_tail - z_tail)
+  z_direct <- torch_clamp(z, min = -1)
+  root_direct <- torch_sqrt(two + z_direct$pow(2))
+  log_direct <- torch_log(half + z_direct / (two * root_direct))
+  torch_where(negative_tail, log_tail, log_direct)
 }
 
 log_pt <- function(z, nu) {
-  torch_log(torch_clamp(t_cdf(z, nu), min = 1e-12))
+  args <- .coerce_t_cdf_inputs(z, nu)
+  z <- args$z
+  nu <- args$nu
+  dtype <- z$dtype
+  device <- z$device
+  one <- torch_tensor(1, dtype = dtype, device = device)
+  two <- 2 * one
+
+  out <- .log_normal_cdf(.hill_t_transform(z, nu))
+  out <- torch_where(nu == two, .log_t2_cdf(z), out)
+  torch_where(nu == one, .log_t1_cdf(z), out)
+}
+
+t_cdf <- function(z, nu) {
+  torch_exp(log_pt(z, nu))
 }
 
 # ------------------------------
@@ -1473,7 +1549,6 @@ train_mst_pmdn <- function(inputs,
 
   make_checkpoint <- function(epoch) {
     list(
-      schema_version = 2L,
       epoch = as.integer(epoch),
       model_state_dict = model$state_dict(),
       optimizer_state_dict = optimizer$state_dict(),

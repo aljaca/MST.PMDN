@@ -13,7 +13,7 @@ loss_mst_pmdn(output, target, lambda_alpha = 0, lambda_nu_inv = 0)
 }
 \description{
 Computes the average negative log-likelihood under a mixture of multivariate skew t distributions for a batch of examples.
-The function extracts mixture weights, component locations, Cholesky scale factors, degrees of freedom, and skewness parameters from \code{output}, then evaluates the MST-PMDN log-density at \code{target}, finally averaging (and negating) to produce the loss.
+The function extracts mixture weights, component locations, Cholesky scale factors, degrees of freedom, and skewness parameters from \code{output}, then evaluates the MST-PMDN log-density at \code{target}, finally averaging (and negating) to produce the loss. The skewness factor uses Hill's Student t approximation through a direct, stable log-CDF calculation without a hard lower-tail probability floor.
 }
 \value{
 A single-element \code{\link[torch]{torch_tensor}} containing the batch-averaged negative log-likelihood.

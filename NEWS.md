@@ -11,4 +11,8 @@
   counters, and available R/torch RNG state; latest and best states now use
   separate files.
 - Validation now evaluates every case and reports observation-weighted losses.
+- Replaced the Student t CDF approximation with the more accurate
+  Hill transformation and a stable direct log-CDF, preserving gradients at
+  zero and removing the lower-tail probability floor from the likelihood.
+- Removed the unused schema version from pre-release checkpoint payloads.
 - Added regression tests and an R CMD check workflow.
