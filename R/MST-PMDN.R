@@ -927,7 +927,7 @@ loss_mst_pmdn <- function(output, target,
                           lambda_alpha = 0, lambda_nu_inv = 0) {
   # Output must have: pi, mu, scale (Cholesky L), nu, alpha
   # target shape: [B, d]
-  pi         <- output$pi         # [B, M]
+  mix_prob   <- output$pi         # [B, M]
   mu         <- output$mu         # [B, M, d]
   scale_chol <- output$scale_chol # [B, M, d, d]
   nu         <- output$nu         # [B, M]
@@ -935,9 +935,9 @@ loss_mst_pmdn <- function(output, target,
   normal     <- nu == Inf         # exact Gaussian/skew-normal components
   nu_safe    <- torch_where(normal, 3 * torch_ones_like(nu), nu)
   # B <- target$size(1)
-  # M <- pi$size(2)
+  # M <- mix_prob$size(2)
   d <- target$size(2)
-  dev <- pi$device # Get device from a parameter
+  dev <- mix_prob$device # Get device from a parameter
   # Difference: y - mu
   diff <- target$unsqueeze(2) - mu # [B, M, d]
   diff_unsq <- diff$unsqueeze(-1)  # [B, M, d, 1]
@@ -986,7 +986,7 @@ loss_mst_pmdn <- function(output, target,
   # Mixture weighting and log-sum-exp for total log-likelihood
   # log P(y|x) = log sum_k [ pi_k * SkewT(y | mu_k, Sigma_k, alpha_k, nu_k) ]
   #            = logsumexp_k [ log(pi_k) + log(SkewT(...)) ]
-  weighted_log_probs <- torch_log(pi$clamp(min = 1e-12)) +
+  weighted_log_probs <- torch_log(mix_prob$clamp(min = 1e-12)) +
                         log_component # [B, M]
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
