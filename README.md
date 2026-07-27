@@ -375,7 +375,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 *   **Purpose:** Estimates the marginal CDF for one or more response dimensions.
 *   **Method:** Uses Monte Carlo sampling from the mixture to approximate
-    \(F(y_j) = \sum_{k=1}^G \pi_k F_{k,j}(y_j)\), because the component skew-t marginal
+    `(F(y_j) = sum_{k=1}^G pi_k F_{k,j}(y_j))`, because the component skew-t marginal
     CDFs have no closed form in general.
 *   **Context:** Use when you need marginal probabilities for a fitted mixture; see
     `quantile_marginal_mst_pmdn()` for inverse-CDF summaries.
