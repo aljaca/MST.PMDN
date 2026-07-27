@@ -14,7 +14,8 @@ scov_mst_pmdn(pred, type = c("scale", "scale_chol", "cov"), as_array = FALSE)
   \item{type}{Character; \code{"scale"} returns the skew-t scale matrix,
   \code{"scale_chol"} returns its Cholesky factor, and \code{"cov"} returns
   the component covariance after accounting for degrees of freedom and
-  skewness. Component covariance is undefined for \eqn{\nu \le 2}.}
+  skewness. Component covariance is undefined for finite \eqn{\nu \le 2};
+  \code{nu = Inf} uses the exact skew-normal limit.}
   \item{as_array}{Logical; if \code{TRUE}, converts the result to a base R
   array on CPU. Otherwise returns a \code{torch_tensor} on the original device.}
 }
@@ -30,6 +31,8 @@ Let \eqn{C} denote \code{scale_chol},
 \deqn{b_\nu = \sqrt{\nu/\pi}\,\Gamma((\nu-1)/2)/\Gamma(\nu/2).}
 For \eqn{\nu>2}, the component covariance is
 \deqn{C\left[\frac{\nu}{\nu-2}I-b_\nu^2\delta\delta^T\right]C^T.}
+For \eqn{\nu=\infty}, this becomes the exact skew-normal covariance
+\deqn{C\left[I-\frac{2}{\pi}\delta\delta^T\right]C^T.}
 The default \code{type = "scale"} retains the numerical default returned by
 versions prior to 0.2.0, where it was incorrectly labelled covariance.
 }

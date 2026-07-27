@@ -6,12 +6,13 @@ t_cdf(z, nu)
 }
 \arguments{
   \item{z}{Numeric vector or \code{\link[torch]{torch_tensor}} of quantiles.}
-  \item{nu}{Degrees of freedom (scalar or tensor).}
+  \item{nu}{Degrees of freedom (scalar or tensor); \code{Inf} selects the exact normal limit.}
 }
 \description{
 Computes the Student t cumulative distribution using Hill's transformed-normal
 approximation for \code{nu >= 3}, with exact closed forms for \code{nu = 1}
-(Cauchy) and \code{nu = 2}. The implementation is compatible with torch
+(Cauchy) and \code{nu = 2}, and the exact normal CDF for \code{nu = Inf}.
+The implementation is compatible with torch
 computation graphs.
 }
 \details{

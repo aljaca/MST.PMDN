@@ -21,7 +21,7 @@ A named \code{list} containing the output of the model’s forward pass:
   \item{\code{pi}}{Mixture weights tensor of shape \code{[batch_size, M]}.}
   \item{\code{mu}}{Component skew-t location tensor of shape \code{[batch_size, M, d]}. This is not the component mean when skewness is nonzero.}
   \item{\code{scale_chol}}{Cholesky scale factors tensor of shape \code{[batch_size, M, d, d]}.}
-  \item{\code{nu}}{Degrees-of-freedom tensor of shape \code{[batch_size, M]}.}
+  \item{\code{nu}}{Degrees-of-freedom tensor of shape \code{[batch_size, M]}; \code{Inf} marks an exact Gaussian/skew-normal component.}
   \item{\code{alpha}}{Skewness parameters tensor of shape \code{[batch_size, M, d]}.}
   \item{\code{L}, \code{A}, \code{D}}{Volume, shape, and orientation decomposition tensors for each component.}
 }

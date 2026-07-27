@@ -34,9 +34,8 @@ fit_mclust <- function(x, model, G) {
 }
 
 fit_pmdn <- function(x, model, G, N, epochs = 500) {
-  constraint     <- paste0(model, "FN")
+  constraint     <- paste0(model, "NN")
   constant_attr  <- "LADmxns"
-  fixed_nu <- rep(1e6, G)
   fit <- train_mst_pmdn(
     inputs           = matrix(NA, nrow = N, ncol = 0),
     outputs          = x,
@@ -45,8 +44,6 @@ fit_pmdn <- function(x, model, G, N, epochs = 500) {
     constraint       = constraint,
     constant_attr    = constant_attr,
     epochs           = epochs,
-    fixed_nu         = fixed_nu,
-    range_nu         = c(3, 1e6),
     lr               = 1e-2,
     batch_size       = 10,
     validation_split = 0.

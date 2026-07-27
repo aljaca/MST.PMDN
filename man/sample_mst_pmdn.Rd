@@ -10,8 +10,8 @@ sample_mst_pmdn(mdn_output, num_samples = 1, device = "cpu")
   \item{device}{Character; a \pkg{torch} device on which to perform sampling (e.g. \code{"cpu"} or \code{"cuda"}). Defaults to \code{"cpu"}.}
 }
 \description{
-Performs mixture sampling from the multivariate skew t predictive distribution encapsulated in \code{mdn_output}.  
-For each of the \code{num_samples} draws, a mixture component is sampled according to the mixture weights \code{pi}, and then a skew-\emph{t} variate is generated via a Gaussian plus Gamma construction.  
+Performs mixture sampling from the multivariate skew t and skew-normal predictive distribution encapsulated in \code{mdn_output}.
+For each of the \code{num_samples} draws, a mixture component is sampled according to the mixture weights \code{pi}. Finite-\code{nu} components use the Gaussian plus Gamma skew-\emph{t} construction; components with \code{nu = Inf} use its exact skew-normal limit with no random tail scale.
 The output tensors are permuted so that the first dimension indexes the draw number.  
 }
 \value{
@@ -21,4 +21,3 @@ A \code{list} with components:
   \item{\code{components}}{A \code{\link[torch]{torch_tensor}} of shape \code{c(num_samples, batch_size)}, containing the index (1–\code{M}) of the mixture component used for each draw.}
 }
 }
-
