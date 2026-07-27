@@ -104,29 +104,33 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
   list(z = z, nu = nu)
 }
 
-.gk_t_transform <- function(z, nu) {
-  # Gaver-Kafadar transformation, written without sign() or a removable
-  # singularity at z = 0:
-  # sign(z) * sqrt(log(1 + z^2 / nu) / g(nu))
-  # = z * sqrt((log(1 + u) / u) / (nu * g(nu))).
+.hill_t_transform <- function(z, nu) {
+  # Hill's normalizing transformation, written without sign() or the
+  # removable singularity at z = 0.
   dtype <- z$dtype
   device <- z$device
   one <- torch_tensor(1, dtype = dtype, device = device)
-  two <- 2 * one
-
-  # The nu = 1 branch is replaced by its exact CDF below. Substituting two
-  # here keeps the unselected approximate branch finite under torch_where().
-  nu_gk <- torch_where(nu == one, two, nu)
-  z2 <- z$pow(2)
-  u <- z2 / nu_gk
+  a <- nu - 0.5 * one
+  u <- z$pow(2) / nu
   u_safe <- torch_where(u == 0, one, u)
-  ratio_direct <- torch_log1p(u) / u_safe
+  log1p_u <- torch_log1p(u)
+  ratio_direct <- log1p_u / u_safe
   ratio_series <- one - u / 2 + u$pow(2) / 3 - u$pow(3) / 4 +
                   u$pow(4) / 5
   log1p_ratio <- torch_where(u < 1e-4, ratio_series, ratio_direct)
-  g <- (nu_gk - 1.5 * one) / (nu_gk - one)$pow(2)
 
-  z * torch_sqrt(log1p_ratio / (nu_gk * g))
+  # Brophy's algebraic form of Hill's three-term expansion. The signed
+  # leading term q is smooth through zero because log1p(u) / u is evaluated
+  # by its series there.
+  r <- a * log1p_u
+  b <- 48 * a$pow(2)
+  polynomial <- ((0.4 * r + 3.3 * one) * r + 24 * one) * r +
+                85.5 * one
+  correction <- one + (r + 3 * one) / b -
+                polynomial / (b * (0.8 * r$pow(2) + 100 * one + b))
+  q <- z * torch_sqrt((a / nu) * log1p_ratio)
+
+  q * correction
 }
 
 .log_normal_cdf <- function(z) {
@@ -198,7 +202,7 @@ log_pt <- function(z, nu) {
   one <- torch_tensor(1, dtype = dtype, device = device)
   two <- 2 * one
 
-  out <- .log_normal_cdf(.gk_t_transform(z, nu))
+  out <- .log_normal_cdf(.hill_t_transform(z, nu))
   out <- torch_where(nu == two, .log_t2_cdf(z), out)
   torch_where(nu == one, .log_t1_cdf(z), out)
 }

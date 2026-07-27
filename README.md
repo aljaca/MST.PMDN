@@ -284,7 +284,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `t_cdf(z, nu)`
 
 *   **Purpose:** Calculates a differentiable approximation of the univariate Student's t cumulative distribution function (CDF).
-*   **Method:** Uses the Gaver–Kafadar transformed-normal approximation for `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases. A direct, stable log-CDF path avoids lower-tail cancellation and probability flooring. The implementation is fully torch-compatible for use in autograd graphs.
+*   **Method:** Uses Hill's transformed-normal approximation for `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases. A zero-safe factorization preserves gradients at the origin, while a direct, stable log-CDF path avoids lower-tail cancellation and probability flooring. The implementation is fully torch-compatible for use in autograd graphs.
 *   **Context:** Used within the loss function's skewness calculation to provide a fast, differentiable Student t log-CDF without switching between multiple implementations.
 
 #### Function: `sample_gamma(shape, scale, device)`

@@ -2,7 +2,7 @@ tensor_values <- function(x) {
   as.numeric(torch::as_array(x$to(device = "cpu")))
 }
 
-test_that("Gaver-Kafadar CDF has bounded absolute error", {
+test_that("Hill CDF has bounded absolute error", {
   probs <- seq(1e-8, 1 - 1e-8, length.out = 10001)
   for (df in c(3, 4, 5, 6, 10, 30, 100, 502)) {
     z <- stats::qt(probs, df = df)
@@ -10,16 +10,16 @@ test_that("Gaver-Kafadar CDF has bounded absolute error", {
       torch::torch_tensor(z, dtype = torch::torch_double()),
       torch::torch_tensor(rep(df, length(z)), dtype = torch::torch_double())
     )
-    threshold <- if (df == 3) 5e-3 else 2e-3
+    threshold <- if (df == 3) 1.2e-5 else 2e-6
     expect_lt(max(abs(tensor_values(approx) - probs)), threshold)
   }
 })
 
-test_that("Gaver-Kafadar log-CDF is accurate in the lower tail", {
+test_that("Hill log-CDF is accurate in the lower tail", {
   cases <- data.frame(
     df = c(5, 5, 5, 10, 30),
-    p = c(1e-3, 1e-4, 1e-6, 1e-6, 1e-6),
-    tolerance = c(0.05, 0.12, 0.32, 0.10, 0.02)
+    p = c(1e-4, 1e-6, 1e-9, 1e-9, 1e-9),
+    tolerance = c(5e-4, 3e-3, 0.03, 3e-4, 1e-5)
   )
   z <- stats::qt(cases$p, df = cases$df)
   approx <- MST.PMDN:::log_pt(
@@ -28,6 +28,22 @@ test_that("Gaver-Kafadar log-CDF is accurate in the lower tail", {
   )
   error <- abs(tensor_values(approx) - log(cases$p))
   expect_true(all(error < cases$tolerance))
+})
+
+test_that("Hill log-CDF is accurate over the default reachable loss domain", {
+  cases <- expand.grid(
+    d = c(1, 2),
+    nu = c(3, 5, 10, 30, 100, 500),
+    fraction = c(0.25, 0.5, 0.75, 1)
+  )
+  cases$df <- cases$nu + cases$d
+  cases$z <- -2.5 * sqrt(cases$d * cases$df) * cases$fraction
+  approx <- MST.PMDN:::log_pt(
+    torch::torch_tensor(cases$z, dtype = torch::torch_double()),
+    torch::torch_tensor(cases$df, dtype = torch::torch_double())
+  )
+  exact <- stats::pt(cases$z, df = cases$df, log.p = TRUE)
+  expect_lt(max(abs(tensor_values(approx) - exact)), 3e-4)
 })
 
 test_that("t CDF is symmetric, monotone, and bounded", {
@@ -90,8 +106,8 @@ test_that("Student t log-CDF has no lower-tail probability floor", {
 })
 
 test_that("log-CDF gradients agree with exact reference derivatives", {
-  probs <- c(1e-3, 1e-4, 1e-6)
-  df <- 5
+  probs <- c(1e-4, 1e-6, 1e-9)
+  df <- 5.25
   z_values <- stats::qt(probs, df = df)
   z <- torch::torch_tensor(
     z_values,
@@ -116,8 +132,8 @@ test_that("log-CDF gradients agree with exact reference derivatives", {
 
   z_relative_error <- abs(tensor_values(z$grad) / exact_z_gradient - 1)
   nu_relative_error <- abs(tensor_values(nu$grad) / exact_nu_gradient - 1)
-  expect_lt(max(z_relative_error), 0.06)
-  expect_lt(max(nu_relative_error), 0.06)
+  expect_lt(max(z_relative_error), 0.01)
+  expect_lt(max(nu_relative_error), 0.01)
 })
 
 test_that("log-CDF gradients remain finite at the removable singularity", {
