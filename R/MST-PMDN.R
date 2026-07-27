@@ -1008,14 +1008,24 @@ loss_mst_pmdn <- function(output, target,
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
   # L2 penalty on final alpha values
-  loss <- loss + lambda_alpha * alpha$pow(2)$mean()
+  lambda_alpha_tensor <- torch_tensor(
+    lambda_alpha,
+    dtype = loss$dtype,
+    device = dev
+  )
+  loss <- loss + lambda_alpha_tensor * alpha$pow(2)$mean()
   # (1/nu)^2 penalty on degrees of freedom
   nu_inv_sq <- torch_where(
     normal,
     torch_zeros_like(nu_safe),
     nu_safe$pow(-2)
   )
-  loss <- loss + lambda_nu_inv * nu_inv_sq$mean()
+  lambda_nu_inv_tensor <- torch_tensor(
+    lambda_nu_inv,
+    dtype = loss$dtype,
+    device = dev
+  )
+  loss <- loss + lambda_nu_inv_tensor * nu_inv_sq$mean()
   loss
 }
 
