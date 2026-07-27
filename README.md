@@ -32,7 +32,7 @@ While it can be used for model-based density estimation and clustering tasks, th
 
 ## Deep MST-PMDN Architecture
 
-<img src="deep-MST-PMDN.png" alt="Deep MST-PMDN" width="360"/>
+<img src="deep-MST-PMDN.png" alt="Deep MST-PMDN" width="480"/>
 
 ## Installation
 
