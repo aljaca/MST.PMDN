@@ -13,7 +13,7 @@ train_mst_pmdn(
   constraint             = "VVVNN",
   constant_attr          = "",
   fixed_nu               = NULL,
-  range_nu               = c(3, 500),
+  range_nu               = c(3, 50),
   max_alpha              = 2.5,
   min_vol_shape          = 1e-2,
   min_mix_weight         = 1e-4,
@@ -50,17 +50,17 @@ train_mst_pmdn(
   \item{outputs}{Numeric matrix or \code{\link[torch]{torch_tensor}} of responses (rows = cases).}
   \item{hidden_dim}{Integer vector giving the layer widths in the default dense MLP. When \code{fusion_module} is supplied, these values create no layers; the final value is used only if the fusion output dimension cannot be inferred.}
   \item{n_mixtures}{Integer; number of mixture components \code{M}.}
-  \item{constraint}{Character; MST-PMDN constraint code (volume–shape–orientation, degrees of freedon \code{nu}, and skew), e.g. \code{"VVVFN"}.}
+  \item{constraint}{Character; MST-PMDN constraint code (volume–shape–orientation, degrees of freedom \code{nu}, and skew), e.g. \code{"VVVFN"}. An \code{"N"} degrees-of-freedom constraint selects the exact Gaussian/skew-normal limit.}
   \item{constant_attr}{Character; flags for parameters held constant ("m" for skew-t locations, "x" for mixing coefficients, "L" for volume, "A" for shape, "D" for orientation, "n" for degrees of freedom \code{nu}, and "s" for skew).}
-  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}; if non-\code{NULL}, fixes degrees of freedom \code{nu} per component.}
-  \item{range_nu}{Numeric vector of length 2: clamp range for \code{nu}. Defaults to \code{c(3, 500)} to bound optimization while allowing a broad range of tail heaviness.}
+  \item{fixed_nu}{Numeric vector of length \code{M}, or \code{NULL}. Under an \code{"F"} degrees-of-freedom constraint, positive finite entries are fixed Student-t degrees of freedom, \code{Inf} selects an exact Gaussian/skew-normal component, and \code{NA} selects a learned finite-\code{nu} component.}
+  \item{range_nu}{Two increasing positive finite values bounding learned \code{nu}. Defaults to \code{c(3, 50)} so initialization and most of the sigmoid range remain in the statistically informative finite-tail regime.}
   \item{max_alpha}{Numeric; maximum absolute skewness parameter.}
   \item{min_vol_shape}{Numeric; minimum allowed volume (L) and shape (A) diagonal values.}
   \item{min_mix_weight}{Numeric; minimum mixture weight per component.}
   \item{jitter}{Numeric; small ridge added to covariance diagonals for stability.}
   \item{activation}{Function or list of functions applied after each non-final layer of the default dense MLP (e.g., \code{nn_tanh}, \code{nn_relu}). Ignored when \code{fusion_module} is supplied.}
   \item{lambda_alpha}{Numeric; weight of an L2 penalty on the final skewness parameter \code{alpha}.}
-  \item{lambda_nu_inv}{Numeric; weight of a penalty on \code{(1/nu)^2}.}
+  \item{lambda_nu_inv}{Numeric; weight of a penalty on \code{(1/nu)^2}. Exact normal components contribute zero.}
   \item{epochs}{Integer; maximum number of training epochs.}
   \item{lr}{Numeric; learning rate for the optimizer.}
   \item{batch_size}{Integer; mini-batch size.}

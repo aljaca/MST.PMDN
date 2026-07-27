@@ -13,7 +13,7 @@ sample_mst_pmdn_df(mdn_output, num_samples = 1, device = "cpu")
 }
 
 \description{
-For each of \code{num_samples} draws per case, a mixture component is sampled according to the weights \code{pi}, and then a multivariate skew-\emph{t} variate is generated via the usual Gaussian + Gamma construction.  
+For each of \code{num_samples} draws per case, a mixture component is sampled according to the weights \code{pi}. Finite-\code{nu} components use the usual Gaussian plus Gamma skew-\emph{t} construction; components with \code{nu = Inf} use the exact skew-normal limit with no random tail scale.
 The results are returned in long format as an R \code{\link{data.frame}} with one row per draw, including the sampled values for each response dimension, the input case index, the draw index, and the component chosen.
 }
 

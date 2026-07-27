@@ -5,9 +5,9 @@
 
 In an MST-PMDN model, parameters of a mixture of multivariate skew t distributions that describe a multivariate output are estimated by training a deep learning model with two multi-modal input branches, one for tabular inputs and the other for (optional) image inputs. The two branches are provided as user-defined ['torch'](https://torch.mlverse.org/) modules. Outputs from each are concatenated and passed through a dense fusion network unless a custom fusion module is supplied, which then leads to the MST-PMDN head. In the absence of both branches, the tabular inputs are fed directly into the dense network. The overall network architecture is [shown here](deep-MST-PMDN.png).
 
-Following the approach used in model-based clustering (['mclust'](https://cran.r-project.org/package=mclust)), scale matrices in the MST-PMDN head are represented using an LAD eigen-decomposition parameterization. LAD attributes, the nu (or degrees of freedom) parameter (n), and the alpha (or skewness) parameter (s) can be forced to be `"V"`ariable or `"E"`qual between mixture components (plus `"I"`dentity for A and D). For n and s parameters, the model can also be constrained to emulate a multivariate `"N"`ormal (or Gaussian) distribution. Different model types are specified by setting the argument `constraint = "EIINN"`, `"VEVEV"`, etc. where each letter position in the argument corresponds, respectively, to each of the LADns attributes. In the case of n, users can specify `"F"`ixed values for nu and pass a `fixed_nu` vector as an additional argument. If an element of `fixed_nu` is set to `NA`, then the value of nu for this component is learned by the network. Furthermore, values of mu (the skew-t location parameter) (m), pi (or mixing coefficients) (x), volume-shape-orientation attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to be independent of inputs by specifying any combination of `constant_attr = "m"`, `"mx"`, ..., `"LADmxns"`. When skewness is nonzero, mu is not the component mean.
+Following the approach used in model-based clustering (['mclust'](https://cran.r-project.org/package=mclust)), scale matrices in the MST-PMDN head are represented using an LAD eigen-decomposition parameterization. LAD attributes, the nu (or degrees of freedom) parameter (n), and the alpha (or skewness) parameter (s) can be forced to be `"V"`ariable or `"E"`qual between mixture components (plus `"I"`dentity for A and D). An `"N"` constraint on n selects the exact \(\nu\rightarrow\infty\) Gaussian-limit kernel; it is Gaussian when s is also `"N"` and skew-normal otherwise. An `"N"` constraint on s sets alpha to zero. Different model types are specified by setting `constraint = "EIINN"`, `"VEVEV"`, etc., where each letter position corresponds to an LADns attribute. With an `"F"` constraint on n, `fixed_nu` entries can be positive finite values, `Inf` for an exact Gaussian/skew-normal component, or `NA` for a component whose nu is learned over `range_nu` (default `c(3, 50)`). Furthermore, values of mu (the skew-t location parameter) (m), pi (or mixing coefficients) (x), volume-shape-orientation attributes (LAD), nu (n), and skewness (s) for the mixtures can be made independent of inputs by specifying any combination of `constant_attr = "m"`, `"mx"`, ..., `"LADmxns"`. When skewness is nonzero, mu is not the component mean.
 
-By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN can emulate the Gaussian finite mixture models implemented by ['mclust'](https://cran.r-project.org/package=mclust), i.e., for unconditional density estimation or model-based clustering:
+By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN implements the Gaussian finite mixture models provided by ['mclust'](https://cran.r-project.org/package=mclust), i.e., for unconditional density estimation or model-based clustering:
 
 | mclust model | Description                                         | MST-PMDN `constraint =` | MST-PMDN `constant_attr =` |
 | -----------: | :-------------------------------------------------- | :---------------------- | :------------------------- |
@@ -216,8 +216,8 @@ hidden_dim <- c(64, 32) # Layer widths in the default dense MLP
 drop_hidden <- 0.1      # Dropout between non-final MLP layers
 n_mixtures <- 2         # 2 components in the MST mixture model
 constraint <- "VVIFN"   # LAD = "V"ariable-"V"ariable-"I"dentity; nu = 1 component "F"ixed; skewness = "N"ormal
-fixed_nu <- c(500, NA)  # nu = 500 for 1st component (i.e., approximately "N"ormal); "V"ariable for 2nd
-constant_attr <- ""     # All non-normal component attributes are free to vary with covariates
+fixed_nu <- c(Inf, NA)  # exact Gaussian 1st component; learned nu for 2nd
+constant_attr <- ""     # All component attributes are free to vary with covariates
 wd_tabular <- 0         # Weight decay for tabular module
 wd_image <- 0.01        # Weight decay for image module
 epochs <- 20            # Number of training epochs
@@ -284,7 +284,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `t_cdf(z, nu)`
 
 *   **Purpose:** Calculates a differentiable approximation of the univariate Student's t cumulative distribution function (CDF).
-*   **Method:** Uses Hill's transformed-normal approximation for `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases. A zero-safe factorization preserves gradients at the origin, while a direct, stable log-CDF path avoids lower-tail cancellation and probability flooring. The implementation is fully torch-compatible for use in autograd graphs.
+*   **Method:** Uses Hill's transformed-normal approximation for finite `nu >= 3`, with exact closed-form CDFs for the Cauchy (`nu = 1`) and `nu = 2` cases and the exact normal CDF for `nu = Inf`. A zero-safe factorization preserves gradients at the origin, while a direct, stable log-CDF path avoids lower-tail cancellation and probability flooring. The implementation is fully torch-compatible for use in autograd graphs.
 *   **Context:** Used within the loss function's skewness calculation to provide a fast, differentiable Student t log-CDF without switching between multiple implementations.
 
 #### Function: `sample_gamma(shape, scale, device)`
@@ -324,7 +324,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
     *   Processes optional image and tabular inputs through dedicated modules or uses raw inputs.
     *   When a fusion module is supplied, its output receives the optional `drop_hidden` dropout and is passed directly to the parameter-prediction heads. Otherwise, extracted features are concatenated and processed by a default hidden MLP constructed from `nn_linear` layers. In the custom-fusion case, `hidden_dim` creates no hidden layers and its final value is used only as a fallback for determining the fusion output dimension.
     *   Predicts mixture parameters (`pi`, `mu`, `L`, `A`, `D`, `nu`, `alpha`) using separate output heads (mostly `weight_norm_linear` or `nn_parameter` if constant).
-    *   Applies constraints (Variable, Equal, Identity, Normal approx., Fixed) to parameters based on configuration.
+    *   Applies Variable, Equal, Identity, exact Normal-limit, and Fixed constraints. Fixed `nu = Inf` marks an exact Gaussian/skew-normal component, while `NA` marks a learned finite-t component.
     *   Constructs the full scale matrix `Sigma = L * D * diag(A) * D^T` and computes its Cholesky decomposition (`scale_chol`) for each component.
 *   **Output:** Returns a list containing all mixture parameters (`pi`, `mu`, `scale_chol`, `nu`, `alpha`) and LAD components (`L`, `A`, `D`), batched appropriately.
 
@@ -336,8 +336,8 @@ The deep MST-PMDN implementation consists of the following key functions and mod
         *   Calculates residuals: `diff = target - mu_k`.
         *   Standardizes residuals: `v = scale_chol_k^{-1} * diff`.
         *   Calculates squared Mahalanobis distance: `maha = ||v||^2`.
-        *   Calculates the log-PDF of the symmetric multivariate t-distribution part using `maha`, `log_det(Sigma_k)`, and `nu_k`.
-        *   Calculates the skewness adjustment term `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`, where `w` is proportional to `v`, using the stable direct log-CDF path.
+        *   For finite `nu`, calculates the symmetric multivariate t log-PDF using a cancellation-resistant normalizing constant and the skewness adjustment `log(2 * T_CDF(alpha_k^T w, df=nu_k+d))`.
+        *   For `nu = Inf`, evaluates the exact Gaussian or skew-normal limit using the multivariate normal log-PDF and `log(2 * Phi(alpha_k^T v))`.
     *   Combines component log-densities using mixture weights `pi` via `logsumexp`.
     *   Returns the mean NLL over the batch.
     *   Optionally adds an L2 penalty on the final `alpha` values via `lambda_alpha`,
@@ -349,7 +349,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Method:**
     *   Samples component indices based on `pi`.
     *   Gathers parameters for the selected components.
-    *   Generates t-distribution scaling factors `W` using `sample_gamma`.
+    *   Generates t-distribution scaling factors `W` using `sample_gamma` for finite-t components and sets `W = 1` exactly for Gaussian/skew-normal components.
     *   Generates a *standard* multivariate skew-normal sample `X` based on the component's `alpha` (via `delta`).
     *   Transforms the standard sample `X` to the output space: `Y = mu_s + W * (scale_chol_s @ X)`.
 *   **Output:** Returns a **list** with  
@@ -362,7 +362,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Method:**
     *   Samples component indices based on `pi`.
     *   Gathers parameters for the selected components.
-    *   Generates t-distribution scaling factors `W` using `sample_gamma`.
+    *   Generates t-distribution scaling factors `W` using `sample_gamma` for finite-t components and sets `W = 1` exactly for Gaussian/skew-normal components.
     *   Generates a *standard* multivariate skew-normal sample `X` based on the component's `alpha` (via `delta`).
     *   Transforms the standard sample `X` to the output space: `Y = mu_s + W * (scale_chol_s @ X)`.
 *   **Output:** A data frame with `num_samples * batch_size` rows containing  
@@ -402,8 +402,8 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 #### Function: `scov_mst_pmdn(pred, type = c("scale", "scale_chol", "cov"), ...)`
 
-*   **Purpose:** Returns component scale matrices, their Cholesky factors, or actual skew-t covariance matrices.
-*   **Method:** Uses the `scale_chol` factor employed by the likelihood. For `type = "cov"`, the scale is transformed using both `nu` and `alpha`; covariance is undefined for `nu <= 2`.
+*   **Purpose:** Returns component scale matrices, their Cholesky factors, or actual skew-t/skew-normal covariance matrices.
+*   **Method:** Uses the `scale_chol` factor employed by the likelihood. For `type = "cov"`, the scale is transformed using both `nu` and `alpha`; covariance is undefined for finite `nu <= 2`, while `nu = Inf` uses the exact skew-normal limit.
 *   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]`. The default `type = "scale"` retains the numerical output returned by earlier versions under the misleading name `"cov"`.
 
 

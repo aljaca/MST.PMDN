@@ -26,22 +26,25 @@ matrices in the MST-PMDN head are represented using an LAD
 eigen-decomposition parameterization. LAD attributes, the nu (or degrees of 
 freedom) parameter (n), and the alpha (or skewness) parameter (s) can be 
 forced to be \code{"V"}ariable or \code{"E"}qual between mixture components
-(plus \code{"I"}dentity for A and D). For n and s, the model can also be
-constrained to emulate a multivariate \code{"N"}ormal (or Gaussian) distribution.
+(plus \code{"I"}dentity for A and D). An \code{"N"} constraint on n selects
+the exact \eqn{\nu\rightarrow\infty} kernel, which is Gaussian when s is also
+\code{"N"} and skew-normal otherwise. An \code{"N"} constraint on s sets
+alpha to zero.
 Different model types are specified by setting the argument \code{constraint = "EIINN"}, 
 \code{"VEVEV"}, etc. where each letter position in the argument corresponds, 
 respectively, to each of the LADns attributes. In the case of n, users 
 can specify \code{"F"}ixed values for nu by passing an optional \code{fixed_nu} 
-vector. If an element of \code{fixed_nu} is set to \code{NA}, then the value 
-of nu for this component is learned by the network. Furthermore, values of mu (or 
+vector. Positive finite entries specify Student-t degrees of freedom,
+\code{Inf} selects an exact Gaussian/skew-normal component, and \code{NA}
+selects a component whose nu is learned over \code{range_nu}. Furthermore, values of mu (or
 skew-t locations) (m), pi (or mixing coefficients) (x), volume-shape-orientation
 attributes (LAD), nu (n), and skewness (s) for the mixtures can be made to 
 be independent of inputs by specifying any combination of 
 \code{constant_attr = "m"}, \code{"mx"}, ..., \code{"LADmxns"}.
 
-By combining appropriate values of \code{constraint} and 
-\code{constant_attr}, MST-PMDN can emulate the Gaussian finite mixture 
-models implemented by \pkg{mclust}, i.e., for unconditional density 
+By combining appropriate values of \code{constraint} and
+\code{constant_attr}, MST-PMDN implements the Gaussian finite mixture
+models provided by \pkg{mclust}, i.e., for unconditional density
 estimation or model-based clustering. Similarly, if the constraint on the nu 
 parameter (n) is loosened (e.g., \code{constraint = "VVVEN"} with 
 \code{constant_attr = "LADmxn"}), MST-PMDN can emulate model-based 

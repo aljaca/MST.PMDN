@@ -33,7 +33,7 @@ test_that("Hill log-CDF is accurate in the lower tail", {
 test_that("Hill log-CDF is accurate over the default reachable loss domain", {
   cases <- expand.grid(
     d = c(1, 2),
-    nu = c(3, 5, 10, 30, 100, 500),
+    nu = c(3, 5, 10, 30, 50),
     fraction = c(0.25, 0.5, 0.75, 1)
   )
   cases$df <- cases$nu + cases$d
@@ -70,6 +70,15 @@ test_that("exact CDF branches for one and two degrees of freedom are stable", {
     ))
     expect_equal(approx, stats::pt(z, df = df), tolerance = 1e-10)
   }
+})
+
+test_that("infinite degrees of freedom use the exact normal CDF", {
+  z <- c(-14, -5, -1, 0, 1, 5, 14)
+  approx <- tensor_values(t_cdf(
+    torch::torch_tensor(z, dtype = torch::torch_double()),
+    torch::torch_tensor(Inf, dtype = torch::torch_double())
+  ))
+  expect_equal(approx, stats::pnorm(z), tolerance = 1e-12)
 })
 
 test_that("stable normal log-CDF remains finite in the float32 tail", {

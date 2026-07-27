@@ -45,7 +45,7 @@ tail_cases$absolute_log_error <- abs(
 
 reachable_cases <- expand.grid(
   d = c(1, 2),
-  nu = c(3, 5, 10, 30, 100, 500),
+  nu = c(3, 5, 10, 30, 50),
   fraction = c(0.25, 0.5, 0.75, 1)
 )
 reachable_cases$df <- reachable_cases$nu + reachable_cases$d

@@ -201,14 +201,43 @@ log_pt <- function(z, nu) {
   device <- z$device
   one <- torch_tensor(1, dtype = dtype, device = device)
   two <- 2 * one
+  normal <- nu == Inf
+  nu_safe <- torch_where(normal, 3 * one, nu)
 
-  out <- .log_normal_cdf(.hill_t_transform(z, nu))
-  out <- torch_where(nu == two, .log_t2_cdf(z), out)
-  torch_where(nu == one, .log_t1_cdf(z), out)
+  out <- .log_normal_cdf(.hill_t_transform(z, nu_safe))
+  out <- torch_where(nu_safe == two, .log_t2_cdf(z), out)
+  out <- torch_where(nu_safe == one, .log_t1_cdf(z), out)
+  torch_where(normal, .log_normal_cdf(z), out)
 }
 
 t_cdf <- function(z, nu) {
   torch_exp(log_pt(z, nu))
+}
+
+.log_multivariate_t_normalizer <- function(nu, d) {
+  # Evaluate
+  # log Gamma((nu + d) / 2) - log Gamma(nu / 2)
+  # - (d / 2) log(nu * pi)
+  # without subtracting large, nearly equal float32 values. For even d,
+  # Gamma recurrence removes the gamma functions entirely. Odd-dimensional
+  # ratios are small tensors, so evaluate them in float64 before casting back.
+  if (d %% 2 == 0) {
+    m <- as.integer(d / 2)
+    out <- 0 * nu - m * log(2 * pi)
+    if (m > 1) {
+      for (j in seq_len(m - 1)) {
+        out <- out + torch_log1p(2 * j / nu)
+      }
+    }
+    return(out)
+  }
+
+  dtype <- nu$dtype
+  nu_double <- nu$to(dtype = torch_double())
+  out <- torch_lgamma((nu_double + d) / 2) -
+         torch_lgamma(nu_double / 2) -
+         (d / 2) * (torch_log(nu_double) + log(pi))
+  out$to(dtype = dtype)
 }
 
 # ------------------------------
@@ -326,7 +355,7 @@ define_mst_pmdn <- function(
   tabular_module = NULL,
   fusion_module = NULL,
   fixed_nu = NULL,
-  range_nu = c(3., 500.),    # clamp nu range
+  range_nu = c(3., 50.),     # clamp learned nu range
   max_alpha = 2.5,          # alpha = [-max_alpha, max_alpha]
   min_vol_shape = 1e-2,     # clamps on L_val and A_diag
   min_mix_weight = 1e-4,    # clamp on min component weight
@@ -373,8 +402,13 @@ define_mst_pmdn <- function(
       self$output_dim      <- output_dim
       self$constraint      <- constraint
       self$constant_attr   <- constant_attr
-      self$min_nu          <- min(range_nu)
-      self$max_nu          <- max(range_nu)
+      if (!is.numeric(range_nu) || length(range_nu) != 2 ||
+          any(!is.finite(range_nu)) || range_nu[1] <= 0 ||
+          range_nu[2] <= range_nu[1]) {
+        stop("range_nu must be two increasing, positive finite values.")
+      }
+      self$min_nu          <- range_nu[1]
+      self$max_nu          <- range_nu[2]
       self$max_alpha       <- max_alpha
       self$min_vol_shape   <- min_vol_shape
       self$min_mix_weight  <- min_mix_weight
@@ -517,7 +551,7 @@ define_mst_pmdn <- function(
       # -----------------------
       # Sigmoid: nu = min_nu + (max_nu - min_nu) * sigmoid(raw_nu)
       nu_letter <- substr(constraint, 4, 4)
-      self$nu_normal_approx <- (nu_letter == "N")  # means treat as ~Inf
+      self$nu_normal <- (nu_letter == "N")
       self$nu_shared <- (nu_letter == "E" || nu_letter == "N")
       self$nu_fixed <- (nu_letter == "F")  # Flag for fixed nu values
       if (self$nu_fixed) {
@@ -528,6 +562,18 @@ define_mst_pmdn <- function(
         if (length(fixed_nu) != n_mixtures) {
           stop(paste0("fixed_nu must have length equal to n_mixtures (",
                       n_mixtures, ")"))
+        }
+        if (is.logical(fixed_nu) && all(is.na(fixed_nu))) {
+          fixed_nu <- as.numeric(fixed_nu)
+        }
+        if (!is.numeric(fixed_nu) || any(is.nan(fixed_nu))) {
+          stop("fixed_nu entries must be positive finite values, Inf, or NA.")
+        }
+        invalid_fixed_nu <- !is.na(fixed_nu) &
+          ((is.finite(fixed_nu) & fixed_nu <= 0) |
+           (is.infinite(fixed_nu) & fixed_nu < 0))
+        if (any(invalid_fixed_nu)) {
+          stop("fixed_nu entries must be positive finite values, Inf, or NA.")
         }
         # Store which components have fixed values (not NA)
         fixed_mask <- !is.na(fixed_nu)
@@ -560,7 +606,7 @@ define_mst_pmdn <- function(
             })
           }
         }
-      } else if (!self$nu_normal_approx) {
+      } else if (!self$nu_normal) {
         nu_size <- if (self$nu_shared) 1 else n_mixtures
         if (grepl("n", constant_attr)) {
           # i.e., nu is "constant" (but distinct across mixture if not shared)
@@ -746,9 +792,15 @@ define_mst_pmdn <- function(
       # -----------------------
       # Degrees of freedom (nu)
       # -----------------------
-      if (self$nu_normal_approx) {
-        # effectively infinite => normal. Use max_nu as a large proxy.
-        nu <- torch_full(c(B, self$n_mixtures), self$max_nu, device = x$device)
+      if (self$nu_normal) {
+        # The exact Gaussian/skew-normal limit is represented by nu = Inf.
+        # Distribution helpers branch before evaluating any Student-t terms.
+        nu <- torch_full(
+          c(B, self$n_mixtures),
+          Inf,
+          dtype = x$dtype,
+          device = x$device
+        )
       } else if (self$nu_fixed) {
         # Get fixed values
         fixed_values <- self$fixed_nu_values
@@ -880,6 +932,8 @@ loss_mst_pmdn <- function(output, target,
   scale_chol <- output$scale_chol # [B, M, d, d]
   nu         <- output$nu         # [B, M]
   alpha      <- output$alpha      # [B, M, d]
+  normal     <- nu == Inf         # exact Gaussian/skew-normal components
+  nu_safe    <- torch_where(normal, 3 * torch_ones_like(nu), nu)
   # B <- target$size(1)
   # M <- pi$size(2)
   d <- target$size(2)
@@ -898,37 +952,53 @@ loss_mst_pmdn <- function(output, target,
   diag_L <- scale_chol$diagonal(dim1 = -2, dim2 = -1)
   # Clamp diagonal elements before log for stability
   log_det_Sigma <- 2 * diag_L$clamp(min = 1e-12)$log()$sum(dim = 3) # [B, M]
-  # Log PDF of multivariate t distribution component
-  half_nu <- nu / 2
-  half_nu_plus_d <- (nu + d) / 2
-  lg_nu_div2 <- torch_lgamma(half_nu)
-  lg_nuplusd_div2 <- torch_lgamma(half_nu_plus_d)
-  logC_t <- lg_nuplusd_div2 - lg_nu_div2 - (d / 2) * torch_log(nu *
-                torch_tensor(3.14159265359, device = dev)) - 0.5 * log_det_Sigma
-  logTail <- -half_nu_plus_d * torch_log1p(torch_clamp(maha / nu,
+  # Log PDF of each finite-nu multivariate t component. The normalizing
+  # constant uses gamma recurrence for even d and float64 intermediates for
+  # odd d, avoiding cancellation between large float32 lgamma values.
+  half_nu_plus_d <- (nu_safe + d) / 2
+  logC_t <- .log_multivariate_t_normalizer(nu_safe, d) -
+            0.5 * log_det_Sigma
+  logTail <- -half_nu_plus_d * torch_log1p(torch_clamp(maha / nu_safe,
                                            min = -1 + 1e-7, max = 1e7))
   log_pdf_t <- logC_t + logTail
+
+  # Exact nu -> Inf limit of the symmetric kernel.
+  log_pdf_normal <- -(d / 2) * log(2 * pi) -
+                    0.5 * log_det_Sigma - 0.5 * maha
+  log_pdf <- torch_where(normal, log_pdf_normal, log_pdf_t)
+
   # Skewness factor calculation
-  # Clamp large values, [B, M, 1]
-  cterm <- torch_sqrt((nu + d) / (nu + maha))$unsqueeze(-1)$clamp(max = 1e6)
+  # Clamp large values, [B, M, 1]. The limit is one for normal components.
+  cterm <- torch_sqrt((nu_safe + d) / (nu_safe + maha))$clamp(max = 1e6)
+  cterm <- torch_where(normal, torch_ones_like(cterm), cterm)$unsqueeze(-1)
   w <- cterm * v # [B, M, d]
   # alpha^T w
   alpha_dot_w <- (alpha * w)$sum(dim = 3) # [B, M]
-  # Univariate standard t-CDF with df = nu + d
-  # Final log-density of skew-t component
+  # The finite-t skew factor uses T_1; its exact normal limit uses Phi.
+  log_skew_cdf <- torch_where(
+    normal,
+    .log_normal_cdf(alpha_dot_w),
+    log_pt(alpha_dot_w, nu_safe + d)
+  )
   log_skew_factor <- torch_log(torch_tensor(2.0, device = dev)) +
-                     log_pt(alpha_dot_w, nu + d)
-  log_skewt <- log_pdf_t + log_skew_factor # [B, M]
+                     log_skew_cdf
+  log_component <- log_pdf + log_skew_factor # [B, M]
   # Mixture weighting and log-sum-exp for total log-likelihood
   # log P(y|x) = log sum_k [ pi_k * SkewT(y | mu_k, Sigma_k, alpha_k, nu_k) ]
   #            = logsumexp_k [ log(pi_k) + log(SkewT(...)) ]
-  weighted_log_probs <- torch_log(pi$clamp(min = 1e-12)) + log_skewt # [B, M]
+  weighted_log_probs <- torch_log(pi$clamp(min = 1e-12)) +
+                        log_component # [B, M]
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
   # L2 penalty on final alpha values
   loss <- loss + lambda_alpha * alpha$pow(2)$mean()
   # (1/nu)^2 penalty on degrees of freedom
-  loss <- loss + lambda_nu_inv * nu$pow(-2)$mean()
+  nu_inv_sq <- torch_where(
+    normal,
+    torch_zeros_like(nu_safe),
+    nu_safe$pow(-2)
+  )
+  loss <- loss + lambda_nu_inv * nu_inv_sq$mean()
   loss
 }
 
@@ -958,9 +1028,17 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   L_s     <- L_all    $gather(2, idx_dd)
   nu_s    <- nu_all   $gather(2, idx)
   alpha_s <- alpha_all$gather(2, idx_d)
-  # Gamma scaling for Student-t tails
-  chi2 <- sample_gamma(nu_s / 2, scale = 2, device = device)
-  W    <- torch_sqrt(nu_s / chi2$clamp(min = 1e-12))$unsqueeze(-1)
+  # Gamma scaling for Student-t tails. Exact normal components use W = 1;
+  # a finite placeholder prevents Inf from entering the unused Gamma branch.
+  normal_s <- nu_s == Inf
+  if (normal_s$all()$item()) {
+    W <- torch_ones_like(nu_s)$unsqueeze(-1)
+  } else {
+    nu_sample <- torch_where(normal_s, 2 * torch_ones_like(nu_s), nu_s)
+    chi2 <- sample_gamma(nu_sample / 2, scale = 2, device = device)
+    W_t <- torch_sqrt(nu_sample / chi2$clamp(min = 1e-12))
+    W <- torch_where(normal_s, torch_ones_like(W_t), W_t)$unsqueeze(-1)
+  }
   # skew direction (identity-covariance, Sigma = I convention)
   alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
   delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
@@ -1231,7 +1309,7 @@ train_mst_pmdn <- function(inputs,
                            constraint = "VVVNN",
                            constant_attr = "",
                            fixed_nu = NULL,
-                           range_nu = c(3., 500.),
+                           range_nu = c(3., 50.),
                            max_alpha = 2.5,
                            min_vol_shape = 1e-2,
                            min_mix_weight = 1e-4,
@@ -1856,22 +1934,38 @@ scov_mst_pmdn <- function(pred, type = c("scale", "scale_chol", "cov"),
       # Cov(Y) = C [nu/(nu-2) I - b_nu^2 delta delta^T] C^T,
       # where C is scale_chol and
       # b_nu = sqrt(nu/pi) Gamma((nu-1)/2) / Gamma(nu/2).
+      # At nu = Inf, the exact skew-normal limit has scale multiplier one
+      # and b_nu^2 = 2 / pi.
+      normal <- nu == Inf
       invalid <- nu <= 2
       if (invalid$any()$item()) {
         warning("Component covariance is undefined for nu <= 2; returning NaN for those components.")
       }
-      nu_safe <- nu$clamp(min = 2 + 1e-6)
+      nu_safe <- torch_where(
+        normal,
+        3 * torch_ones_like(nu),
+        nu$clamp(min = 2 + 1e-6)
+      )
       alpha_norm_sq <- alpha$pow(2)$sum(dim = -1, keepdim = TRUE)
       delta <- alpha / torch_sqrt(1 + alpha_norm_sq)
       log_b_nu <- 0.5 * (torch_log(nu_safe) -
         torch_log(torch_tensor(pi, device = device, dtype = nu_safe$dtype))) +
         torch_lgamma((nu_safe - 1) / 2) - torch_lgamma(nu_safe / 2)
-      b_nu_sq <- torch_exp(2 * log_b_nu)$unsqueeze(-1)$unsqueeze(-1)
+      b_nu_sq <- torch_where(
+        normal,
+        (2 / pi) * torch_ones_like(nu_safe),
+        torch_exp(2 * log_b_nu)
+      )$unsqueeze(-1)$unsqueeze(-1)
+      scale_multiplier <- torch_where(
+        normal,
+        torch_ones_like(nu_safe),
+        nu_safe / (nu_safe - 2)
+      )$unsqueeze(-1)$unsqueeze(-1)
       eye_mat <- torch_eye(d, device = device, dtype = scale_chol$dtype)$
         unsqueeze(1)$unsqueeze(1)$expand(scale_chol$size())
       delta_outer <- delta$unsqueeze(-1) * delta$unsqueeze(-2)
       standardized_cov <-
-        (nu_safe / (nu_safe - 2))$unsqueeze(-1)$unsqueeze(-1) * eye_mat -
+        scale_multiplier * eye_mat -
         b_nu_sq * delta_outer
       out <- torch_matmul(
         torch_matmul(scale_chol, standardized_cov),
