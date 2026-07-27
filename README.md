@@ -404,7 +404,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 *   **Purpose:** Returns component scale matrices, their Cholesky factors, or actual skew-t/skew-normal covariance matrices.
 *   **Method:** Uses the `scale_chol` factor employed by the likelihood. For `type = "cov"`, the scale is transformed using both `nu` and `alpha`; covariance is undefined for finite `nu <= 2`, while `nu = Inf` uses the exact skew-normal limit.
-*   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]`. The default `type = "scale"` retains the numerical output returned by earlier versions under the misleading name `"cov"`.
+*   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]`.
 
 
 ## References
