@@ -14,6 +14,27 @@ test_that("normal constraints and fixed Inf use the exact limit", {
   )
   normal_pred <- normal_model(x)
   expect_true(all(is.infinite(normal_test_values(normal_pred$nu))))
+  expect_identical(normal_pred$skew_none, TRUE)
+  expect_true(all(normal_test_values(normal_pred$alpha) == 0))
+  expect_null(normal_model$fc_alpha)
+  expect_null(normal_model$alpha_param)
+
+  shared_skew_model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 1,
+    hidden_dim = c(3),
+    n_mixtures = 2,
+    constraint = "VIINE"
+  )
+  varying_skew_model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 1,
+    hidden_dim = c(3),
+    n_mixtures = 2,
+    constraint = "VIINV"
+  )
+  expect_identical(shared_skew_model(x)$skew_none, FALSE)
+  expect_identical(varying_skew_model(x)$skew_none, FALSE)
 
   mixed_model <- define_mst_pmdn(
     input_dim = 2,
@@ -27,6 +48,31 @@ test_that("normal constraints and fixed Inf use the exact limit", {
   mixed_nu <- torch::as_array(mixed_model(x)$nu)
   expect_true(all(is.infinite(mixed_nu[, 1])))
   expect_equal(mixed_nu[, 2], rep(26.5, 4), tolerance = 1e-6)
+})
+
+test_that("constant skewness remains on the general skew path", {
+  torch::torch_manual_seed(419)
+  x <- torch::torch_zeros(c(4, 2))
+  model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 2,
+    hidden_dim = c(3),
+    n_mixtures = 2,
+    constraint = "VIINE",
+    constant_attr = "s"
+  )
+  pred <- model(x)
+  alpha <- torch::as_array(pred$alpha)
+
+  expect_identical(pred$skew_none, FALSE)
+  expect_null(model$fc_alpha)
+  expect_false(is.null(model$alpha_param))
+  expect_gt(max(abs(alpha)), 0)
+  for (b in seq_len(dim(alpha)[1])) {
+    for (m in seq_len(dim(alpha)[2])) {
+      expect_equal(alpha[b, m, ], alpha[1, 1, ], tolerance = 0)
+    }
+  }
 })
 
 test_that("normal and mixed fixed nu paths preserve float64 dtype", {
@@ -229,7 +275,8 @@ test_that("normal sampling omits Student-t scale variability", {
     mu = array(0, c(1, 1, 1)),
     scale_chol = array(1, c(1, 1, 1, 1)),
     nu = matrix(Inf, 1, 1),
-    alpha = array(0, c(1, 1, 1))
+    alpha = array(0, c(1, 1, 1)),
+    skew_none = TRUE
   )
 
   set.seed(17)

@@ -13,7 +13,7 @@ cdf_marginal_mst_pmdn(
 )
 }
 \arguments{
-  \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} containing mixture parameters.}
+  \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} containing mixture parameters. The optional \code{skew_none} field is passed through when Monte Carlo draws are generated; if absent, sampling uses the general skew path. In a hand-built list, \code{skew_none = TRUE} is valid only when \code{alpha} is structurally zero.}
   \item{y}{Numeric vector of response values at which to evaluate the marginal CDF.}
   \item{var_index}{Integer; indices of the response dimensions to evaluate. Defaults to all output dimensions.}
   \item{num_samples}{Integer; number of Monte Carlo draws used to approximate the marginal CDF.}

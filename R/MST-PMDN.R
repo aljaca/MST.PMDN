@@ -923,6 +923,7 @@ define_mst_pmdn <- function(
         scale_chol = scale_chol,   # [B, M, d, d]
         nu    = nu,                # [B, M]
         alpha = alpha,             # [B, M, d]
+        skew_none = self$skew_none,
         # Volume/Shape/Orientation breakdown
         L     = L_val,   # [B, M, 1, 1]
         A     = A_diag,  # [B, M, d]
@@ -936,10 +937,66 @@ define_mst_pmdn <- function(
 # PMDN skew t-distribution loss function
 # --------------------------------------
 
+.validate_skew_none <- function(output, name = "output") {
+  skew_none <- output$skew_none
+  if (is.null(skew_none)) {
+    return(FALSE)
+  }
+  if (!is.logical(skew_none) ||
+      length(skew_none) != 1L ||
+      is.na(skew_none)) {
+    stop(
+      sprintf("%s$skew_none must be a single non-missing logical value.", name),
+      call. = FALSE
+    )
+  }
+  skew_none
+}
+
+.require_alpha <- function(output, name = "output") {
+  if (is.null(output$alpha)) {
+    stop(sprintf("%s$alpha is required.", name), call. = FALSE)
+  }
+  invisible(output$alpha)
+}
+
+.validate_penalty_weight <- function(value, name) {
+  if (!is.numeric(value) ||
+      length(value) != 1L ||
+      !is.finite(value) ||
+      value < 0) {
+    stop(
+      sprintf(
+        "%s must be a single finite non-negative numeric value.",
+        name
+      ),
+      call. = FALSE
+    )
+  }
+  value
+}
+
+.log_skew_factor_mst <- function(alpha, v, nu_safe, maha, normal, d) {
+  cterm <- torch_sqrt((nu_safe + d) / (nu_safe + maha))$clamp(max = 1e6)
+  cterm <- torch_where(normal, torch_ones_like(cterm), cterm)$unsqueeze(-1)
+  alpha_dot_w <- (alpha * (cterm * v))$sum(dim = 3)
+  # R numeric scalars are weak in torch arithmetic: log(2) follows the
+  # tensor dtype and device without allocating a tensor constant per call.
+  log(2) + torch_where(
+    normal,
+    .log_normal_cdf(alpha_dot_w),
+    log_pt(alpha_dot_w, nu_safe + d)
+  )
+}
+
 loss_mst_pmdn <- function(output, target,
                           lambda_alpha = 0, lambda_nu_inv = 0) {
   # Output must have: pi, mu, scale (Cholesky L), nu, alpha
   # target shape: [B, d]
+  lambda_alpha <- .validate_penalty_weight(lambda_alpha, "lambda_alpha")
+  lambda_nu_inv <- .validate_penalty_weight(lambda_nu_inv, "lambda_nu_inv")
+  .require_alpha(output)
+  skew_none <- .validate_skew_none(output)
   mix_prob   <- output$pi         # [B, M]
   mu         <- output$mu         # [B, M, d]
   scale_chol <- output$scale_chol # [B, M, d, d]
@@ -980,26 +1037,14 @@ loss_mst_pmdn <- function(output, target,
                     0.5 * log_det_Sigma - 0.5 * maha
   log_pdf <- torch_where(normal, log_pdf_normal, log_pdf_t)
 
-  # Skewness factor calculation
-  # Clamp large values, [B, M, 1]. The limit is one for normal components.
-  cterm <- torch_sqrt((nu_safe + d) / (nu_safe + maha))$clamp(max = 1e6)
-  cterm <- torch_where(normal, torch_ones_like(cterm), cterm)$unsqueeze(-1)
-  w <- cterm * v # [B, M, d]
-  # alpha^T w
-  alpha_dot_w <- (alpha * w)$sum(dim = 3) # [B, M]
-  # The finite-t skew factor uses T_1; its exact normal limit uses Phi.
-  log_skew_cdf <- torch_where(
-    normal,
-    .log_normal_cdf(alpha_dot_w),
-    log_pt(alpha_dot_w, nu_safe + d)
-  )
-  log_skew_factor <- torch_log(torch_tensor(
-    2.0,
-    dtype = mix_prob$dtype,
-    device = dev
-  )) +
-                     log_skew_cdf
-  log_component <- log_pdf + log_skew_factor # [B, M]
+  if (skew_none) {
+    log_component <- log_pdf
+  } else {
+    log_component <- log_pdf + .log_skew_factor_mst(
+      alpha = alpha, v = v, nu_safe = nu_safe,
+      maha = maha, normal = normal, d = d
+    )
+  }
   # Mixture weighting and log-sum-exp for total log-likelihood
   # log P(y|x) = log sum_k [ pi_k * SkewT(y | mu_k, Sigma_k, alpha_k, nu_k) ]
   #            = logsumexp_k [ log(pi_k) + log(SkewT(...)) ]
@@ -1007,25 +1052,29 @@ loss_mst_pmdn <- function(output, target,
                         log_component # [B, M]
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
-  # L2 penalty on final alpha values
-  lambda_alpha_tensor <- torch_tensor(
-    lambda_alpha,
-    dtype = loss$dtype,
-    device = dev
-  )
-  loss <- loss + lambda_alpha_tensor * alpha$pow(2)$mean()
-  # (1/nu)^2 penalty on degrees of freedom
-  nu_inv_sq <- torch_where(
-    normal,
-    torch_zeros_like(nu_safe),
-    nu_safe$pow(-2)
-  )
-  lambda_nu_inv_tensor <- torch_tensor(
-    lambda_nu_inv,
-    dtype = loss$dtype,
-    device = dev
-  )
-  loss <- loss + lambda_nu_inv_tensor * nu_inv_sq$mean()
+  # Construct penalty graphs only when their weights are active. Under the
+  # structural symmetric constraint the alpha penalty is identically zero.
+  if (lambda_alpha > 0 && !skew_none) {
+    lambda_alpha_tensor <- torch_tensor(
+      lambda_alpha,
+      dtype = loss$dtype,
+      device = dev
+    )
+    loss <- loss + lambda_alpha_tensor * alpha$pow(2)$mean()
+  }
+  if (lambda_nu_inv > 0) {
+    nu_inv_sq <- torch_where(
+      normal,
+      torch_zeros_like(nu_safe),
+      nu_safe$pow(-2)
+    )
+    lambda_nu_inv_tensor <- torch_tensor(
+      lambda_nu_inv,
+      dtype = loss$dtype,
+      device = dev
+    )
+    loss <- loss + lambda_nu_inv_tensor * nu_inv_sq$mean()
+  }
   loss
 }
 
@@ -1036,12 +1085,16 @@ loss_mst_pmdn <- function(output, target,
 
 sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   num_samples <- validate_num_samples(num_samples)
+  .require_alpha(mdn_output, "mdn_output")
+  skew_none <- .validate_skew_none(mdn_output, "mdn_output")
   # gather parameters
   pi     <- mdn_output$pi          $to(device = device)
   mu     <- mdn_output$mu          $to(device = device)
   L_all  <- mdn_output$scale_chol  $to(device = device)
   nu_all <- mdn_output$nu          $to(device = device)
-  alpha_all <- mdn_output$alpha    $to(device = device)
+  if (!skew_none) {
+    alpha_all <- mdn_output$alpha$to(device = device)
+  }
   B <- pi$size(1)
   # M <- pi$size(2)
   d <- mu$size(3)
@@ -1054,7 +1107,6 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
   mu_s    <- mu       $gather(2, idx_d)
   L_s     <- L_all    $gather(2, idx_dd)
   nu_s    <- nu_all   $gather(2, idx)
-  alpha_s <- alpha_all$gather(2, idx_d)
   # Gamma scaling for Student-t tails. Exact normal components use W = 1;
   # a finite placeholder prevents Inf from entering the unused Gamma branch.
   normal_s <- nu_s == Inf
@@ -1066,25 +1118,30 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
     W_t <- torch_sqrt(nu_sample / chi2$clamp(min = 1e-12))
     W <- torch_where(normal_s, torch_ones_like(W_t), W_t)$unsqueeze(-1)
   }
-  # skew direction (identity-covariance, Sigma = I convention)
-  alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
-  delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
-  delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
-  # standard normals
-  z0 <- torch_randn(c(B, num_samples, 1), device = device)
-  z1 <- torch_randn(c(B, num_samples, d), device = device)
-  # Skew-normal core.  The residual requires the symmetric matrix square root
-  # of I - delta delta^T.  Apply its rank-one form without materializing a
-  # [B, S, d, d] tensor:
-  # (I - delta delta^T)^(1/2) z =
-  # z - delta (delta^T z) / (1 + sqrt(1 - ||delta||^2)).
-  sqrt_one_minus_delta_sq <- torch_sqrt(
-    (1 - delta_norm_sq)$clamp(min = 1e-12)
-  )
-  delta_dot_z1 <- (delta * z1)$sum(dim = -1, keepdim = TRUE)
-  residual <- z1 - delta * delta_dot_z1 /
-    (1 + sqrt_one_minus_delta_sq)
-  X <- delta * torch_abs(z0) + residual
+  if (skew_none) {
+    X <- torch_randn(c(B, num_samples, d), device = device)
+  } else {
+    alpha_s <- alpha_all$gather(2, idx_d)
+    # skew direction (identity-covariance, Sigma = I convention)
+    alpha_norm_sq <- alpha_s$pow(2)$sum(dim = -1, keepdim = TRUE)
+    delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
+    delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
+    # standard normals
+    z0 <- torch_randn(c(B, num_samples, 1), device = device)
+    z1 <- torch_randn(c(B, num_samples, d), device = device)
+    # Skew-normal core. The residual requires the symmetric matrix square root
+    # of I - delta delta^T. Apply its rank-one form without materializing a
+    # [B, S, d, d] tensor:
+    # (I - delta delta^T)^(1/2) z =
+    # z - delta (delta^T z) / (1 + sqrt(1 - ||delta||^2)).
+    sqrt_one_minus_delta_sq <- torch_sqrt(
+      (1 - delta_norm_sq)$clamp(min = 1e-12)
+    )
+    delta_dot_z1 <- (delta * z1)$sum(dim = -1, keepdim = TRUE)
+    residual <- z1 - delta * delta_dot_z1 /
+      (1 + sqrt_one_minus_delta_sq)
+    X <- delta * torch_abs(z0) + residual
+  }
   # affine map to response space  Y
   Y <- mu_s + W * (torch_matmul(L_s, X$unsqueeze(-1))$squeeze(-1))
   # return both samples and component IDs

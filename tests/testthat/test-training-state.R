@@ -42,6 +42,7 @@ test_that("validation uses every case and is batch-size invariant", {
   expect_equal(fit_a$val_loss_history, fit_b$val_loss_history,
                tolerance = 1e-6)
   pred <- predict_mst_pmdn(fit_a$model, x[split$validation, , drop = FALSE])
+  expect_identical(pred$skew_none, TRUE)
   manual_loss <- loss_mst_pmdn(
     pred,
     torch::torch_tensor(y[split$validation, , drop = FALSE],
@@ -123,4 +124,8 @@ test_that("checkpoint resume reproduces uninterrupted training", {
   expect_null(latest$schema_version)
   expect_null(best$schema_version)
   expect_false(identical(resumed_path, fit_resumed$best_checkpoint_path))
+  expect_identical(
+    predict_mst_pmdn(fit_resumed$model, x[1:2, , drop = FALSE])$skew_none,
+    TRUE
+  )
 })

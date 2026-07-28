@@ -1,3 +1,16 @@
+# MST.PMDN 0.2.1
+
+## Performance
+
+- Models with the `"N"` skewness constraint now bypass the skew-factor block
+  in `loss_mst_pmdn()` and the skew-normal construction in
+  `sample_mst_pmdn()`. Loss values and trainable-parameter gradients are
+  unchanged. Inactive skewness and degrees-of-freedom penalties no longer
+  construct reduction graphs.
+- Symmetric sampling consumes a different RNG sequence because the redundant
+  scalar-normal draw is no longer made. Fixed seeds remain reproducible within
+  this version but do not reproduce sample streams from earlier versions.
+
 # MST.PMDN 0.2.0
 
 - Corrected one-based mixture-component sampling and the multivariate

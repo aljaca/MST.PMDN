@@ -23,6 +23,9 @@ A named \code{list} containing the output of the model’s forward pass:
   \item{\code{scale_chol}}{Cholesky scale factors tensor of shape \code{[batch_size, M, d, d]}.}
   \item{\code{nu}}{Degrees-of-freedom tensor of shape \code{[batch_size, M]}; \code{Inf} marks an exact Gaussian/skew-normal component.}
   \item{\code{alpha}}{Skewness parameters tensor of shape \code{[batch_size, M, d]}.}
+  \item{\code{skew_none}}{A single logical value indicating whether the model
+  has the \code{"N"} skewness constraint. Older or hand-built output lists may
+  omit this field; consumers then evaluate the general skew path.}
   \item{\code{L}, \code{A}, \code{D}}{Volume, shape, and orientation decomposition tensors for each component.}
 }
 }
