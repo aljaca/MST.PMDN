@@ -13,7 +13,7 @@ quantile_marginal_mst_pmdn(
 )
 }
 \arguments{
-  \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} or a forward pass of an \code{mst_pmdn_model}, containing at minimum the following named \code{\link[torch]{torch_tensor}} elements: \code{pi}, \code{mu}, \code{scale_chol}, \code{nu}, and \code{alpha}.}
+  \item{mdn_output}{A \code{list} as returned by \code{\link{predict_mst_pmdn}} or a forward pass of an \code{mst_pmdn_model}, containing at minimum the following named \code{\link[torch]{torch_tensor}} elements: \code{pi}, \code{mu}, \code{scale_chol}, \code{nu}, and \code{alpha}. The optional \code{skew_none} field is passed through when Monte Carlo draws are generated; if absent, sampling uses the general skew path. In a hand-built list, \code{skew_none = TRUE} is valid only when \code{alpha} is structurally zero.}
   \item{probs}{Numeric matrix or \pkg{torch} tensor with shape \eqn{B \times V} containing probabilities in \eqn{[0, 1]} for each batch item and output dimension.}
   \item{var_index}{Integer vector of output dimension indices to summarize. Defaults to all output dimensions.}
   \item{num_samples}{Integer; number of Monte Carlo draws per input case. Defaults to \code{1000}.}

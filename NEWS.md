@@ -1,3 +1,28 @@
+# MST.PMDN 0.2.1
+
+## Bug fixes
+
+- Sampler latent-normal and Gamma tail-scale draws now follow the model dtype.
+  Float64 models previously drew float32 latents and relied on implicit
+  promotion. Gamma draws are now made in one vectorized R call.
+- `predict_mst_pmdn()` now coerces non-tensor tabular and image inputs to the
+  model dtype instead of always using float32. Supplied tensors retain their
+  dtype, and a mismatch with the model now errors at the call boundary rather
+  than inside the network, with an explicit conversion remedy. Parameterless
+  modules retain the previous float32 coercion for non-tensor inputs and
+  preserve the dtype of supplied tensors.
+
+## Performance
+
+- Models with the `"N"` skewness constraint now bypass the skew-factor block
+  in `loss_mst_pmdn()` and the skew-normal construction in
+  `sample_mst_pmdn()`. Loss values and trainable-parameter gradients are
+  unchanged. Inactive skewness and degrees-of-freedom penalties no longer
+  construct reduction graphs.
+- Symmetric sampling consumes a different RNG sequence because the redundant
+  scalar-normal draw is no longer made. Fixed seeds remain reproducible within
+  this version but do not reproduce sample streams from earlier versions.
+
 # MST.PMDN 0.2.0
 
 - Corrected one-based mixture-component sampling and the multivariate
