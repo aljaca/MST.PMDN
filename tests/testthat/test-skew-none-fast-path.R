@@ -357,3 +357,346 @@ test_that("sampler bypass draws one latent tensor and never reads alpha", {
     list(c(B, S, 1L), c(B, S, d))
   )
 })
+
+convert_output_dtype <- function(output, dtype) {
+  tensor_fields <- c("pi", "mu", "scale_chol", "nu", "alpha")
+  for (name in tensor_fields) {
+    output[[name]] <- output[[name]]$to(dtype = dtype)
+  }
+  output
+}
+
+test_that("the extracted skew factor preserves floating-point dtype", {
+  for (dtype in list(torch::torch_float(), torch::torch_double())) {
+    alpha <- torch::torch_full(
+      c(2, 2, 3), 0.25, dtype = dtype, requires_grad = TRUE
+    )
+    v <- torch::torch_full(c(2, 2, 3), -0.4, dtype = dtype)
+    nu_safe <- torch::torch_tensor(
+      matrix(c(8, 3, 12, 3), nrow = 2, byrow = TRUE),
+      dtype = dtype
+    )
+    maha <- torch::torch_tensor(
+      matrix(c(0.5, 1.5, 2.5, 3.5), nrow = 2, byrow = TRUE),
+      dtype = dtype
+    )
+    normal <- torch::torch_tensor(
+      matrix(c(FALSE, TRUE, FALSE, TRUE), nrow = 2, byrow = TRUE),
+      dtype = torch::torch_bool()
+    )
+
+    value <- MST.PMDN:::.log_skew_factor_mst(
+      alpha = alpha,
+      v = v,
+      nu_safe = nu_safe,
+      maha = maha,
+      normal = normal,
+      d = 3L
+    )
+    expect_identical(as.character(value$dtype), as.character(dtype))
+    value$sum()$backward()
+    expect_identical(as.character(alpha$grad$dtype), as.character(dtype))
+    expect_true(all(is.finite(torch::as_array(alpha$grad))))
+  }
+})
+
+test_that("sampler latent normals and returned samples follow mu dtype", {
+  randn_dtypes <- character()
+  gamma_dtypes <- character()
+  original_randn <- torch::torch_randn
+  original_gamma <- MST.PMDN:::sample_gamma
+  testthat::local_mocked_bindings(
+    torch_randn = function(...) {
+      args <- list(...)
+      randn_dtypes <<- c(randn_dtypes, as.character(args$dtype))
+      do.call(original_randn, args)
+    },
+    sample_gamma = function(...) {
+      value <- original_gamma(...)
+      gamma_dtypes <<- c(gamma_dtypes, as.character(value$dtype))
+      value
+    },
+    .package = "MST.PMDN"
+  )
+
+  fast <- convert_output_dtype(
+    make_zero_skew_output(
+      B = 2, M = 2, d = 3, nu_values = 8, skew_none = TRUE
+    ),
+    torch::torch_double()
+  )
+  fast_draws <- sample_mst_pmdn(fast, num_samples = 4)
+  expect_identical(as.character(fast_draws$samples$dtype), "Double")
+
+  general <- convert_output_dtype(
+    make_zero_skew_output(
+      B = 2, M = 2, d = 3, nu_values = 8, skew_none = FALSE
+    ),
+    torch::torch_double()
+  )
+  general$alpha <- torch::torch_full(
+    c(2, 2, 3), 0.5, dtype = torch::torch_double()
+  )
+  general_draws <- sample_mst_pmdn(general, num_samples = 4)
+  expect_identical(as.character(general_draws$samples$dtype), "Double")
+  expect_identical(randn_dtypes, rep("Double", 3))
+  expect_identical(gamma_dtypes, rep("Double", 2))
+})
+
+test_that("numeric Gamma scale is represented in the shape dtype", {
+  calls <- list()
+  testthat::local_mocked_bindings(
+    rgamma = function(n, shape, rate) {
+      calls[[length(calls) + 1L]] <<- list(
+        n = n,
+        shape = shape,
+        rate = rate
+      )
+      rep(1, n)
+    },
+    .package = "MST.PMDN"
+  )
+
+  shape <- torch::torch_tensor(c(2, 3), dtype = torch::torch_double())
+  scale <- 1 + 2^-30
+  draws <- MST.PMDN:::sample_gamma(shape, scale = scale)
+
+  expect_identical(as.character(draws$dtype), "Double")
+  expect_equal(calls[[1]]$shape, c(2, 3), tolerance = 0)
+  expect_equal(calls[[1]]$rate, 1 / scale, tolerance = 0)
+
+  float_draws <- MST.PMDN:::sample_gamma(c(2, 3), scale = scale)
+  expect_identical(as.character(float_draws$dtype), "Float")
+})
+
+test_that("model dtype inference handles unnamed parameter lists", {
+  parameter <- torch::torch_zeros(c(2, 2), dtype = torch::torch_double())
+  parameterless <- MST.PMDN:::.model_dtype_info(list())
+  expect_null(parameterless$dtype)
+  expect_null(parameterless$parameter_name)
+
+  unnamed <- MST.PMDN:::.model_dtype_info(unname(list(parameter)))
+  expect_identical(unnamed$parameter_name, "<unnamed>")
+  expect_identical(as.character(unnamed$dtype), "Double")
+
+  named <- MST.PMDN:::.model_dtype_info(list(weight = parameter))
+  expect_identical(named$parameter_name, "weight")
+  expect_identical(as.character(named$dtype), "Double")
+})
+
+test_that("prediction coercion follows the first named model parameter", {
+  model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 1,
+    hidden_dim = c(3),
+    n_mixtures = 2,
+    constraint = "VIINN"
+  )
+  model <- model$to(dtype = torch::torch_double())
+  first_parameter_name <- names(model$parameters)[[1]]
+
+  numeric_pred <- predict_mst_pmdn(
+    model,
+    matrix(seq(-1, 1, length.out = 6), nrow = 3)
+  )
+  expect_identical(as.character(numeric_pred$mu$dtype), "Double")
+
+  double_input <- torch::torch_zeros(
+    c(3, 2), dtype = torch::torch_double()
+  )
+  tensor_pred <- predict_mst_pmdn(model, double_input)
+  expect_identical(as.character(tensor_pred$mu$dtype), "Double")
+  expect_identical(as.character(double_input$dtype), "Double")
+
+  float_input <- torch::torch_zeros(c(3, 2), dtype = torch::torch_float())
+  error <- tryCatch(
+    predict_mst_pmdn(model, float_input),
+    error = identity
+  )
+  expect_s3_class(error, "error")
+  expect_true(grepl("new_inputs has dtype", conditionMessage(error), fixed = TRUE))
+  expect_true(grepl(
+    first_parameter_name, conditionMessage(error), fixed = TRUE
+  ))
+  expect_true(grepl(
+    "new_inputs$to(dtype = model$parameters[[1]]$dtype)",
+    conditionMessage(error),
+    fixed = TRUE
+  ))
+  expect_identical(as.character(float_input$dtype), "Float")
+})
+
+test_that("image prediction coercion and mismatch diagnostics use model dtype", {
+  image_dtype_module <- torch::nn_module(
+    "image_dtype_module",
+    initialize = function() {
+      self$output_dim <- 2
+      self$projection <- torch::nn_linear(4, 2)
+    },
+    forward = function(x) {
+      self$projection(x$reshape(c(x$size(1), 4)))
+    }
+  )
+  model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 1,
+    hidden_dim = c(3),
+    n_mixtures = 1,
+    constraint = "VIINN",
+    image_module = image_dtype_module()
+  )
+  model <- model$to(dtype = torch::torch_double())
+  first_parameter_name <- names(model$parameters)[[1]]
+
+  pred <- predict_mst_pmdn(
+    model,
+    matrix(0, nrow = 3, ncol = 2),
+    image_inputs = array(0, dim = c(3, 1, 2, 2))
+  )
+  expect_identical(as.character(pred$mu$dtype), "Double")
+
+  image_tensor <- torch::torch_zeros(
+    c(3, 1, 2, 2), dtype = torch::torch_float()
+  )
+  error <- tryCatch(
+    predict_mst_pmdn(
+      model,
+      torch::torch_zeros(c(3, 2), dtype = torch::torch_double()),
+      image_inputs = image_tensor
+    ),
+    error = identity
+  )
+  expect_s3_class(error, "error")
+  expect_true(grepl(
+    "image_inputs has dtype", conditionMessage(error), fixed = TRUE
+  ))
+  expect_true(grepl(
+    first_parameter_name, conditionMessage(error), fixed = TRUE
+  ))
+  expect_true(grepl(
+    "image_inputs$to(dtype = model$parameters[[1]]$dtype)",
+    conditionMessage(error),
+    fixed = TRUE
+  ))
+  expect_identical(as.character(image_tensor$dtype), "Float")
+})
+
+test_that("parameterless prediction retains legacy input coercion", {
+  parameterless_module <- torch::nn_module(
+    "parameterless_module",
+    forward = function(x, image = NULL) {
+      list(tabular = x, image = image)
+    }
+  )
+  model <- parameterless_module()
+
+  coerced <- predict_mst_pmdn(
+    model,
+    matrix(0, 2, 2),
+    image_inputs = array(0, dim = c(2, 1, 2, 2))
+  )
+  expect_identical(as.character(coerced$tabular$dtype), "Float")
+  expect_identical(as.character(coerced$image$dtype), "Float")
+
+  tabular_tensor <- torch::torch_zeros(
+    c(2, 2), dtype = torch::torch_double()
+  )
+  image_tensor <- torch::torch_zeros(
+    c(2, 1, 2, 2), dtype = torch::torch_double()
+  )
+  retained <- predict_mst_pmdn(
+    model,
+    tabular_tensor,
+    image_inputs = image_tensor
+  )
+  expect_identical(as.character(retained$tabular$dtype), "Double")
+  expect_identical(as.character(retained$image$dtype), "Double")
+  expect_identical(as.character(tabular_tensor$dtype), "Double")
+  expect_identical(as.character(image_tensor$dtype), "Double")
+})
+
+test_that("float64 loss retains dtype and finite backward gradients", {
+  model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 3,
+    hidden_dim = c(4),
+    n_mixtures = 2,
+    constraint = "VIIVV"
+  )
+  model <- model$to(dtype = torch::torch_double())
+  input <- torch::torch_tensor(
+    matrix(seq(-1, 1, length.out = 12), nrow = 6),
+    dtype = torch::torch_double()
+  )
+  target <- torch::torch_tensor(
+    matrix(seq(-0.7, 0.8, length.out = 18), nrow = 6),
+    dtype = torch::torch_double()
+  )
+
+  output <- model(input)
+  loss <- loss_mst_pmdn(output, target)
+  expect_identical(as.character(loss$dtype), "Double")
+  expect_true(is.finite(loss$item()))
+  loss$backward()
+
+  bias_parameters <- list(
+    mixture = model$fc_pi$bias,
+    location = model$fc_mu$bias,
+    scale = model$fc_L$bias,
+    nu = model$fc_nu$bias,
+    alpha = model$fc_alpha$bias
+  )
+  for (name in names(bias_parameters)) {
+    gradient <- torch::as_array(bias_parameters[[name]]$grad)
+    expect_true(all(is.finite(gradient)), info = name)
+  }
+})
+
+test_that("dtype paths run on an available CUDA backend", {
+  testthat::skip_if(!torch::cuda_is_available(), "CUDA is not available")
+  model <- define_mst_pmdn(
+    input_dim = 2,
+    output_dim = 1,
+    hidden_dim = c(3),
+    n_mixtures = 1,
+    constraint = "VIINN"
+  )
+  model <- model$to(dtype = torch::torch_double(), device = "cuda")
+  pred <- predict_mst_pmdn(
+    model,
+    matrix(0, nrow = 2, ncol = 2),
+    device = "cuda"
+  )
+  expect_identical(as.character(pred$mu$dtype), "Double")
+  draws <- sample_mst_pmdn(pred, num_samples = 3, device = "cuda")
+  expect_identical(as.character(draws$samples$dtype), "Double")
+  expect_true(draws$samples$is_cuda)
+
+  for (dtype in list(torch::torch_float(), torch::torch_double())) {
+    alpha <- torch::torch_full(
+      c(2, 2, 3), 0.25, dtype = dtype, device = "cuda"
+    )
+    v <- torch::torch_full(
+      c(2, 2, 3), -0.4, dtype = dtype, device = "cuda"
+    )
+    nu_safe <- torch::torch_full(
+      c(2, 2), 8, dtype = dtype, device = "cuda"
+    )
+    maha <- torch::torch_full(
+      c(2, 2), 0.5, dtype = dtype, device = "cuda"
+    )
+    normal <- torch::torch_zeros(
+      c(2, 2), dtype = torch::torch_bool(), device = "cuda"
+    )
+    value <- MST.PMDN:::.log_skew_factor_mst(
+      alpha = alpha,
+      v = v,
+      nu_safe = nu_safe,
+      maha = maha,
+      normal = normal,
+      d = 3L
+    )
+    expect_identical(as.character(value$dtype), as.character(dtype))
+    expect_true(value$is_cuda)
+  }
+})

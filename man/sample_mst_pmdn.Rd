@@ -17,7 +17,7 @@ The output tensors are permuted so that the first dimension indexes the draw num
 \value{
 A \code{list} with components:
 \describe{
-  \item{\code{samples}}{A \code{\link[torch]{torch_tensor}} of shape \code{c(num_samples, batch_size, d)}, giving the sampled responses.}
+  \item{\code{samples}}{A \code{\link[torch]{torch_tensor}} of shape \code{c(num_samples, batch_size, d)}, giving the sampled responses with the same floating-point dtype as \code{mdn_output$mu}.}
   \item{\code{components}}{A \code{\link[torch]{torch_tensor}} of shape \code{c(num_samples, batch_size)}, containing the index (1–\code{M}) of the mixture component used for each draw.}
 }
 }

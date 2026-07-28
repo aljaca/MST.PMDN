@@ -1,5 +1,17 @@
 # MST.PMDN 0.2.1
 
+## Bug fixes
+
+- Sampler latent-normal and Gamma tail-scale draws now follow the model dtype.
+  Float64 models previously drew float32 latents and relied on implicit
+  promotion. Gamma draws are now made in one vectorized R call.
+- `predict_mst_pmdn()` now coerces non-tensor tabular and image inputs to the
+  model dtype instead of always using float32. Supplied tensors retain their
+  dtype, and a mismatch with the model now errors at the call boundary rather
+  than inside the network, with an explicit conversion remedy. Parameterless
+  modules retain the previous float32 coercion for non-tensor inputs and
+  preserve the dtype of supplied tensors.
+
 ## Performance
 
 - Models with the `"N"` skewness constraint now bypass the skew-factor block

@@ -21,15 +21,20 @@ sample_gamma <- function(shape, scale = 1, device = "cpu") {
     shape <- shape$to(device = device)
   }
   if (!inherits(scale, "torch_tensor")) {
-    scale <- torch_tensor(scale, device = device, dtype = torch_float())
+    scale <- torch_tensor(scale, device = device, dtype = shape$dtype)
   } else {
     scale <- scale$to(device = device)
   }
   shape_cpu <- as.numeric(shape$to(device = "cpu"))
   scale_cpu <- as.numeric(scale$to(device = "cpu"))
-  # Sample using rgamma(shape, scale) where rate = 1/scale
-  samples_r <- mapply(rgamma, n = 1, shape = shape_cpu, rate = 1 / scale_cpu)
-  out <- torch_tensor(samples_r, dtype = torch_float())$
+  # Sample using rgamma(shape, scale) where rate = 1/scale. A single vectorized
+  # call avoids one R-level RNG call per latent value.
+  samples_r <- rgamma(
+    length(shape_cpu),
+    shape = shape_cpu,
+    rate = 1 / scale_cpu
+  )
+  out <- torch_tensor(samples_r, dtype = shape$dtype)$
     reshape(shape$size())$
     to(device = device)
   return(out)
@@ -1119,7 +1124,11 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
     W <- torch_where(normal_s, torch_ones_like(W_t), W_t)$unsqueeze(-1)
   }
   if (skew_none) {
-    X <- torch_randn(c(B, num_samples, d), device = device)
+    X <- torch_randn(
+      c(B, num_samples, d),
+      dtype = mu$dtype,
+      device = device
+    )
   } else {
     alpha_s <- alpha_all$gather(2, idx_d)
     # skew direction (identity-covariance, Sigma = I convention)
@@ -1127,8 +1136,16 @@ sample_mst_pmdn <- function(mdn_output, num_samples = 1, device = "cpu") {
     delta <- alpha_s / torch_sqrt(1 + alpha_norm_sq)
     delta_norm_sq <- delta$pow(2)$sum(dim = -1, keepdim = TRUE)
     # standard normals
-    z0 <- torch_randn(c(B, num_samples, 1), device = device)
-    z1 <- torch_randn(c(B, num_samples, d), device = device)
+    z0 <- torch_randn(
+      c(B, num_samples, 1),
+      dtype = mu$dtype,
+      device = device
+    )
+    z1 <- torch_randn(
+      c(B, num_samples, d),
+      dtype = mu$dtype,
+      device = device
+    )
     # Skew-normal core. The residual requires the symmetric matrix square root
     # of I - delta delta^T. Apply its rank-one form without materializing a
     # [B, S, d, d] tensor:
@@ -1962,21 +1979,75 @@ train_mst_pmdn <- function(inputs,
 # PMDN inference function with optional image inputs
 # --------------------------------------------------
 
+.model_dtype_info <- function(model_parameters) {
+  if (length(model_parameters) == 0L) {
+    return(list(dtype = NULL, parameter_name = NULL))
+  }
+  parameter_names <- names(model_parameters)
+  if (is.null(parameter_names) || length(parameter_names) < 1L) {
+    model_parameter_name <- "<unnamed>"
+  } else {
+    model_parameter_name <- parameter_names[[1]]
+    if (is.na(model_parameter_name) || !nzchar(model_parameter_name)) {
+      model_parameter_name <- "<unnamed>"
+    }
+  }
+  list(
+    dtype = model_parameters[[1]]$dtype,
+    parameter_name = model_parameter_name
+  )
+}
+
 predict_mst_pmdn <- function(model, new_inputs, image_inputs = NULL,
                              device = "cpu") {
   model$eval()
+  model_dtype_info <- .model_dtype_info(model$parameters)
+  model_parameter_name <- model_dtype_info$parameter_name
+  model_dtype <- model_dtype_info$dtype
   if (!inherits(new_inputs, "torch_tensor")) {
+    input_dtype <- if (is.null(model_dtype)) torch_float() else model_dtype
     new_inputs <- torch_tensor(new_inputs, device = device,
-                               dtype = torch_float())
+                               dtype = input_dtype)
   } else {
     new_inputs <- new_inputs$to(device = device)
   }
+  if (!is.null(model_dtype) && new_inputs$dtype != model_dtype) {
+    stop(
+      sprintf(
+        paste0(
+          "new_inputs has dtype %s but model parameter %s expects %s. ",
+          "Convert it explicitly with ",
+          "new_inputs$to(dtype = model$parameters[[1]]$dtype)."
+        ),
+        format(new_inputs$dtype),
+        model_parameter_name,
+        format(model_dtype)
+      ),
+      call. = FALSE
+    )
+  }
   if (!is.null(image_inputs)) {
     if (!inherits(image_inputs, "torch_tensor")) {
+      image_dtype <- if (is.null(model_dtype)) torch_float() else model_dtype
       image_inputs <- torch_tensor(image_inputs, device = device,
-                                   dtype = torch_float())
+                                   dtype = image_dtype)
     } else {
       image_inputs <- image_inputs$to(device = device)
+    }
+    if (!is.null(model_dtype) && image_inputs$dtype != model_dtype) {
+      stop(
+        sprintf(
+          paste0(
+            "image_inputs has dtype %s but model parameter %s expects %s. ",
+            "Convert it explicitly with ",
+            "image_inputs$to(dtype = model$parameters[[1]]$dtype)."
+          ),
+          format(image_inputs$dtype),
+          model_parameter_name,
+          format(model_dtype)
+        ),
+        call. = FALSE
+      )
     }
     with_no_grad({
       model(new_inputs, image_inputs)
