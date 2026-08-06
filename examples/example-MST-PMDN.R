@@ -215,6 +215,68 @@ print(predictions)
 ens_mean <- apply(as.array(samples), c(2, 3), mean) # [n, d]
 print(cor(ens_mean, as.matrix(outputs)))
 
+# -----------------------------------
+# Distribution-functional explanations
+# -----------------------------------
+
+# Scalar functionals describe the complete fitted mixture. A fixed latent bank
+# supplies common random numbers to every Monte Carlo contrast.
+q90_x <- mst_functional("quantile", responses = 1L, prob = 0.9)
+latent_bank <- latent_draws_mst_pmdn(
+  num_samples = 2048L,
+  output_dim = 2L,
+  dtype = predictions$mu$dtype,
+  seed = 20260806
+)
+q90_values <- functional_mst_pmdn(
+  predictions,
+  q90_x,
+  latent_draws = latent_bank,
+  chunk_size = 64L
+)
+print(head(q90_values$data))
+
+# ALE is the primary population view for correlated tabular inputs. Response
+# means are analytic, so this call requires no Monte Carlo sampling.
+mean_x <- mst_functional("mean", responses = 1L)
+ale_feature_1 <- ale_mst_pmdn(
+  model_fit$model,
+  inputs = inputs,
+  image_inputs = image_inputs,
+  feature = 1L,
+  functional = mean_x,
+  n_bins = 10L,
+  chunk_size = 64L
+)
+print(ale_feature_1)
+
+# A zero image is the natural reference in this synthetic standardized setup.
+image_effect <- image_contrast_mst_pmdn(
+  model_fit$model,
+  inputs = inputs,
+  image_inputs = image_inputs,
+  reference_images = torch_zeros_like(image_inputs),
+  functional = mean_x,
+  cases = 1:50,
+  chunk_size = 25L
+)
+print(summary(image_effect$data$contrast))
+
+# Mixture exceedance accounting is label-safe at each prediction row.
+pred_first_20 <- predict_mst_pmdn(
+  model_fit$model,
+  new_inputs = inputs[1:20, ],
+  image_inputs = image_inputs[1:20, , , ]
+)
+tail_sources <- tail_components_mst_pmdn(
+  pred_first_20,
+  response = 1L,
+  threshold = 2,
+  num_samples = 2048L,
+  seed = 20260806
+)
+print(head(tail_sources$data))
+
 # -------------------
 # Diagnostic plots
 # -------------------
@@ -244,6 +306,10 @@ plot(ens_mean[, 2], as.matrix(outputs)[, 2],
      xlab = "Predicted mean 2", ylab = "True Output 2", pch = 19,
      col = rgb(0, 0.7, 0, 0.4))
 abline(0, 1, lty = 2)
+
+plot(ale_feature_1)
+plot(image_effect)
+plot(tail_sources, row = 1L)
 
 dev.off()
 

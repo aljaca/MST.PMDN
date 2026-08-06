@@ -1,3 +1,42 @@
+# MST.PMDN 0.3.0
+
+## Distribution-functional interpretation
+
+- Added validated scalar functional specifications and evaluators for exact
+  means, variances, standard deviations, covariances, and correlations, plus
+  Monte Carlo quantiles, marginal and joint exceedances, tail spread, and tail
+  asymmetry. Exact mixture covariance includes between-component variation and
+  undefined low-degrees-of-freedom moments are explicit.
+- Added parameter-independent latent banks with common random numbers for
+  component selection, the skew-normal construction, and Gamma-quantile
+  Student-t scaling. Fixed banks preserve dtype and make chunked and unchunked
+  functional evaluation identical.
+- Tail summaries now report expected tail-draw counts and warn when Monte Carlo
+  resolution is inadequate.
+
+## Covariate and image effects
+
+- Added one-dimensional accumulated local effects, centred ICE curves, local
+  finite-difference slopes, and Plate-style baseline-contrast/slope data.
+  Case-matched image rows remain fixed during tabular perturbations.
+- Added whole-image functional contrasts and tapered spatial occlusion maps,
+  with signed, absolute, and sign-consistency population summaries.
+- Added a `rebuild_channels` callback contract for perturbing fundamental
+  physical fields and rebuilding deterministically linked image channels before
+  model evaluation.
+
+## Distributional attribution
+
+- Added exact Shapley decomposition of one-component functional contrasts among
+  complete location, scale, skewness, and degrees-of-freedom blocks. Inactive
+  blocks disappear and every result reports its sum-to-total residual.
+- Added mixture-safe exceedance accounting through component weight,
+  within-component event probability, weighted contribution, tail share, and
+  contribution rank. Full parameter-channel attribution remains disabled for
+  mixtures.
+- Added base-R S3 plotting methods, manual pages, wave-surge and synthetic
+  workflow examples, and CPU/float32/float64/conditional-CUDA regression tests.
+
 # MST.PMDN 0.2.1
 
 ## Bug fixes

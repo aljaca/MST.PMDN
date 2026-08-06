@@ -62,6 +62,11 @@ constrained \code{constant_attr}, the MST-PMDN framework allows parameters
 of the mixture of multivariate Gaussian, t, or skew t distributions to 
 depend on tabular and image covariates via user-specified \pkg{torch} 
 modules.
+
+The interpretation layer evaluates scalar predictive functionals, estimates
+tabular accumulated local effects and centred ICE, maps whole-image and spatial
+occlusion effects, decomposes one-component contrasts among distributional
+parameter channels, and attributes mixture exceedance risk to components.
 }
 \details{
 Key user-facing functions include:
@@ -72,6 +77,16 @@ Key user-facing functions include:
   \item \code{\link{loss_mst_pmdn}}: compute the negative log-likelihood loss for evaluation.
   \item \code{\link{sample_mst_pmdn}}: draw samples as \code{\link[torch]{torch_tensor}} objects.
   \item \code{\link{sample_mst_pmdn_df}}: draw samples returned as an R \code{\link{data.frame}}.
+  \item \code{\link{mst_functional}} and \code{\link{functional_mst_pmdn}}:
+  define and evaluate scientific distribution functionals.
+  \item \code{\link{ale_mst_pmdn}} and \code{\link{ice_mst_pmdn}}:
+  explain tabular covariate effects.
+  \item \code{\link{image_contrast_mst_pmdn}} and
+  \code{\link{image_occlusion_mst_pmdn}}: explain image-field effects.
+  \item \code{\link{decompose_mst_pmdn}}: decompose one-component functional
+  contrasts among physical parameter blocks.
+  \item \code{\link{tail_components_mst_pmdn}}: attribute mixture exceedance
+  probability to components.
 }
 }
 \references{

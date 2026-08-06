@@ -1,13 +1,15 @@
 make_mdn_output <- function(pi, mu, scale_chol, nu, alpha,
-                            skew_none = NULL) {
+                            skew_none = NULL,
+                            dtype = torch::torch_float(),
+                            device = "cpu") {
   output <- list(
-    pi = torch::torch_tensor(pi, dtype = torch::torch_float()),
-    mu = torch::torch_tensor(mu, dtype = torch::torch_float()),
+    pi = torch::torch_tensor(pi, dtype = dtype, device = device),
+    mu = torch::torch_tensor(mu, dtype = dtype, device = device),
     scale_chol = torch::torch_tensor(
-      scale_chol, dtype = torch::torch_float()
+      scale_chol, dtype = dtype, device = device
     ),
-    nu = torch::torch_tensor(nu, dtype = torch::torch_float()),
-    alpha = torch::torch_tensor(alpha, dtype = torch::torch_float())
+    nu = torch::torch_tensor(nu, dtype = dtype, device = device),
+    alpha = torch::torch_tensor(alpha, dtype = dtype, device = device)
   )
   if (!is.null(skew_none)) {
     output$skew_none <- skew_none
