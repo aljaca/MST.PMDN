@@ -82,9 +82,12 @@
       call. = FALSE
     )
   }
+  same_device <- !candidate_tensor || (
+    identical(candidate$device$type, original$device$type) &&
+      identical(candidate$device$index, original$device$index)
+  )
   if (candidate_tensor &&
-      (candidate$dtype != original$dtype ||
-       !identical(format(candidate$device), format(original$device)))) {
+      (candidate$dtype != original$dtype || !same_device)) {
     stop(
       sprintf(
         "%s must match the rebuilt original image dtype and device.",
