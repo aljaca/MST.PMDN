@@ -647,7 +647,9 @@ functional_mst_pmdn <- function(pred,
       call. = FALSE
     )
   }
-  if (!is_mc && any(is.na(values) | !is.finite(values))) {
+  invalid_analytic <- is.na(values) |
+    (!is.finite(values) & functional$type != "df")
+  if (!is_mc && any(invalid_analytic)) {
     warning("One or more analytic functional values are undefined.",
             call. = FALSE)
   }

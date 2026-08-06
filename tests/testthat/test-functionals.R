@@ -30,6 +30,13 @@ test_that("exact Gaussian and Student-t moments are returned", {
     8 / 6 * 9,
     tolerance = 1e-5
   )
+  expect_warning(
+    exact_df <- functional_mst_pmdn(
+      gaussian, mst_functional("df")
+    ),
+    NA
+  )
+  expect_identical(exact_df$data$value, Inf)
 })
 
 test_that("exact skew-normal and skew-t moments are returned", {
