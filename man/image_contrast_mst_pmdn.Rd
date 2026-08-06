@@ -49,7 +49,10 @@ image_contrast_mst_pmdn(
 The contrast is the functional under the observed image minus the functional
 under the reference image, with tabular inputs held fixed. A callback can
 rebuild deterministic channels such as pressure gradients and apply the
-original preprocessing before either image is evaluated.
+original preprocessing before either image is evaluated. Reference fields are
+coerced to the input image representation, dtype, and device before masking.
+All callback evaluations must return mutually compatible model-ready images
+with the same shape, representation, dtype, and device.
 }
 \value{
 An \code{mst_pmdn_image_contrast} object with case contrasts, settings, and

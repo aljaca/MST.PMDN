@@ -163,3 +163,30 @@ test_that("tail diagnostics expose inadequate quantile resolution", {
   expect_equal(result$data$expected_tail_draws, 4.096, tolerance = 1e-10)
   expect_true(result$data$low_tail_resolution)
 })
+
+test_that("probability transforms do not alter tail-resolution diagnostics", {
+  pred <- make_mdn_output(
+    pi = matrix(1, 1, 1),
+    mu = array(0, c(1, 1, 1)),
+    scale_chol = array(1, c(1, 1, 1, 1)),
+    nu = matrix(Inf, 1, 1),
+    alpha = array(0, c(1, 1, 1)),
+    skew_none = TRUE
+  )
+  expect_warning(
+    result <- functional_mst_pmdn(
+      pred,
+      mst_functional(
+        "exceedance",
+        1L,
+        threshold = 100,
+        transform = "logit"
+      ),
+      num_samples = 64L,
+      seed = 2
+    ),
+    "tail resolution"
+  )
+  expect_equal(result$data$expected_tail_draws, 0)
+  expect_equal(result$data$value, stats::qlogis(0.5 / 64))
+})

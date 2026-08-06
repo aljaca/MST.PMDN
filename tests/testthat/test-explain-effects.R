@@ -42,6 +42,28 @@ test_that("ALE chunking preserves results", {
   expect_equal(whole$data$n, chunked$data$n)
 })
 
+test_that("ALE tail diagnostics use evaluated event probabilities", {
+  x <- cbind(feature = seq(-1, 1, length.out = 21), other = 0)
+  model <- explanation_test_model(slope = 1)
+  functional <- mst_functional(
+    "exceedance", 1L, threshold = 10, direction = "upper"
+  )
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 1L, seed = 22)
+  result <- ale_mst_pmdn(
+    model,
+    x,
+    1L,
+    functional,
+    n_bins = 5L,
+    latent_draws = bank
+  )
+  expect_equal(result$diagnostics$min_expected_tail_draws, 0)
+  expect_equal(
+    result$diagnostics$min_expected_tail_draws_by_bin,
+    rep(0, nrow(result$data))
+  )
+})
+
 test_that("tabular perturbations retain case-matched image rows", {
   x <- cbind(feature = c(0, 0.2, 0.4, 0.6, 0.8, 1), other = 0)
   image <- array(0, c(nrow(x), 1, 1, 1))
@@ -85,7 +107,11 @@ test_that("centred ICE includes ALE, derivatives, and Plate data", {
     derivative = TRUE,
     n_bins = 5L
   )
-  expect_equal(unique(result$curves$slope), 3, tolerance = 1e-6)
+  expect_equal(
+    result$curves$slope,
+    rep(3, nrow(result$curves)),
+    tolerance = 1e-6
+  )
   expect_equal(result$plate$local_slope, rep(3, nrow(result$plate)),
                tolerance = 1e-6)
   expect_s3_class(result$ale, "mst_pmdn_ale")
@@ -105,5 +131,9 @@ test_that("channel-specific ALE closes to the total effect", {
   )
   expect_identical(result$active_channels, "location")
   expect_equal(result$data$ale_location, result$data$ale, tolerance = 1e-7)
-  expect_equal(result$data$sum_to_total_residual, 0, tolerance = 1e-7)
+  expect_equal(
+    result$data$sum_to_total_residual,
+    rep(0, nrow(result$data)),
+    tolerance = 1e-7
+  )
 })

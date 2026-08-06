@@ -253,7 +253,11 @@ ale_mst_pmdn <- function(model,
         function(channel) decomposition$data[[paste0("channel_", channel)]]
       )
       names(bin_channel_effects[[k]]) <- decomposition$active_channels
-      functional_diagnostics[[k]] <- decomposition$diagnostics
+      functional_diagnostics[[k]] <- list(
+        min_expected_tail_draws =
+          decomposition$diagnostics$min_expected_tail_draws,
+        decomposition = decomposition$diagnostics
+      )
     } else {
       low <- .functional_values_quiet_mst_pmdn(
         pred_low, functional, num_samples, latent_draws,
@@ -265,6 +269,10 @@ ale_mst_pmdn <- function(model,
       )
       local_effect <- high$data$value - low$data$value
       functional_diagnostics[[k]] <- list(
+        min_expected_tail_draws = .min_finite_mst_pmdn(c(
+          low$data$expected_tail_draws,
+          high$data$expected_tail_draws
+        )),
         low = low$diagnostics,
         high = high$diagnostics
       )
@@ -307,9 +315,11 @@ ale_mst_pmdn <- function(model,
   } else {
     NA_integer_
   }
-  nominal_tail <- if (is_mc) {
-    .tail_resolution_mst_pmdn(
-      rep(0.5, K), functional, actual_samples
+  minimum_tail_by_bin <- if (is_mc) {
+    vapply(
+      functional_diagnostics,
+      function(x) x$min_expected_tail_draws,
+      numeric(1)
     )
   } else {
     rep(NA_real_, K)
@@ -330,9 +340,12 @@ ale_mst_pmdn <- function(model,
     ),
     diagnostics = list(
       bin = functional_diagnostics,
-      nominal_expected_tail_draws = nominal_tail,
+      min_expected_tail_draws_by_bin = minimum_tail_by_bin,
+      min_expected_tail_draws = .min_finite_mst_pmdn(
+        minimum_tail_by_bin
+      ),
       max_abs_sum_to_total_residual = if (length(active_channels)) {
-        max(abs(data$sum_to_total_residual), na.rm = TRUE)
+        .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
       } else {
         NA_real_
       }

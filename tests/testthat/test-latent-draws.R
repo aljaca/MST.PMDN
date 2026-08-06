@@ -5,8 +5,8 @@ test_that("fixed latent banks are reproducible and preserve dtype", {
   second <- latent_draws_mst_pmdn(
     128L, output_dim = 2L, dtype = torch::torch_double(), seed = 17
   )
-  expect_equal(first$component_u$dtype, torch::torch_double())
-  expect_equal(first$skew_z$dtype, torch::torch_double())
+  expect_identical(as.character(first$component_u$dtype), "Double")
+  expect_identical(as.character(first$skew_z$dtype), "Double")
   expect_equal(
     torch::as_array(first$component_u),
     torch::as_array(second$component_u),
@@ -70,7 +70,10 @@ test_that("latent evaluation supports float32, float64, and conditional CUDA", {
       32L, output_dim = 1L, dtype = dtype, seed = 4
     )
     sampled <- MST.PMDN:::.sample_with_latent_mst_pmdn(pred, bank)
-    expect_equal(sampled$samples$dtype, dtype)
+    expect_identical(
+      as.character(sampled$samples$dtype),
+      as.character(dtype)
+    )
   }
 
   skip_if_not(torch::cuda_is_available(), "CUDA is not available")

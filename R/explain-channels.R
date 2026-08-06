@@ -165,6 +165,11 @@ decompose_mst_pmdn <- function(pred_from,
   to_value <- state_values[n_states, ]
   total <- to_value - from_value
   residual <- total - rowSums(contributions)
+  state_tail_resolution <- vapply(
+    state_results,
+    function(x) x$min_expected_tail_draws,
+    numeric(1)
+  )
   data <- data.frame(
     row = seq_len(from_info$batch_size),
     from = from_value,
@@ -190,7 +195,10 @@ decompose_mst_pmdn <- function(pred_from,
       device = device
     ),
     diagnostics = list(
-      max_abs_sum_to_total_residual = max(abs(residual), na.rm = TRUE),
+      max_abs_sum_to_total_residual = .max_abs_finite_mst_pmdn(residual),
+      min_expected_tail_draws = .min_finite_mst_pmdn(
+        state_tail_resolution
+      ),
       state = state_results
     ),
     latent_draws = latent_draws

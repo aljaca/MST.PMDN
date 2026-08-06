@@ -46,7 +46,9 @@ ale_mst_pmdn(
 ALE replaces a feature by its lower and upper empirical-bin boundaries only
 for rows observed in that bin. Local differences are averaged, accumulated at
 bin midpoints, and empirically centred. This makes ALE the preferred population
-summary when meteorological predictors are correlated.
+summary when meteorological predictors are correlated. For Monte Carlo
+functionals, diagnostics report the minimum expected tail-draw count actually
+encountered at the evaluated bin endpoints or hybrid parameter states.
 }
 \value{
 An \code{mst_pmdn_ale} object with \code{data}, breaks, settings, and

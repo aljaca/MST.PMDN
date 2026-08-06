@@ -131,7 +131,9 @@ tail_components_mst_pmdn <- function(pred,
     diagnostics = list(
       component = component_diagnostics,
       low_tail_resolution_rows = which(low_resolution),
-      min_expected_tail_draws = min(expected_tail_draws)
+      min_expected_tail_draws = .min_finite_mst_pmdn(
+        expected_tail_draws
+      )
     ),
     latent_draws = latent_draws
   )

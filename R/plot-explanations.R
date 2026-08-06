@@ -36,7 +36,11 @@ plot.mst_pmdn_ale <- function(x,
   on.exit(graphics::par(old_par), add = TRUE)
   panels <- c("ale", paste0("ale_", x$active_channels))
   labels <- c("total", x$active_channels)
-  graphics::par(mfrow = c(length(panels), 1L), mar = c(2.5, 4, 1.5, 1))
+  graphics::par(
+    mfrow = c(length(panels), 1L),
+    mar = c(2.5, 4, 1.5, 1),
+    oma = c(0, 0, 2, 0)
+  )
   for (i in seq_along(panels)) {
     graphics::plot(
       data$feature_value,
@@ -48,6 +52,14 @@ plot.mst_pmdn_ale <- function(x,
     )
     graphics::abline(h = 0, lty = 2, col = "grey60")
   }
+  graphics::mtext(
+    sprintf(
+      "Maximum |sum-to-total residual|: %s",
+      format(x$diagnostics$max_abs_sum_to_total_residual, digits = 4)
+    ),
+    side = 3,
+    outer = TRUE
+  )
   invisible(x)
 }
 
@@ -160,6 +172,10 @@ plot.mst_pmdn_image_contrast <- function(x,
       stop("Channel plotting requires decompose = TRUE and active channels.",
            call. = FALSE)
     }
+    if (!is.numeric(row) || length(row) != 1L || !is.finite(row) ||
+        row < 1L || row > nrow(x$data) || row != floor(row)) {
+      stop("row must select one image-contrast row.", call. = FALSE)
+    }
     values <- vapply(
       x$active_channels,
       function(channel) x$data[[paste0("channel_", channel)]][row],
@@ -172,6 +188,14 @@ plot.mst_pmdn_image_contrast <- function(x,
       ...
     )
     graphics::abline(h = 0, col = "grey50")
+    graphics::mtext(
+      sprintf(
+        "Sum-to-total residual: %s",
+        format(x$data$sum_to_total_residual[row], digits = 4)
+      ),
+      side = 3,
+      line = 0.25
+    )
   }
   invisible(x)
 }
@@ -233,6 +257,19 @@ plot.mst_pmdn_image_occlusion <- function(x,
     useRaster = TRUE,
     ...
   )
+  if (!is.null(case) && startsWith(statistic, "channel_")) {
+    graphics::mtext(
+      sprintf(
+        "Maximum |sum-to-total residual|: %s",
+        format(
+          .max_abs_finite_mst_pmdn(data$sum_to_total_residual),
+          digits = 4
+        )
+      ),
+      side = 3,
+      line = 0.25
+    )
+  }
   invisible(x)
 }
 

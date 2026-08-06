@@ -39,6 +39,63 @@
   reference_images[rep(1L, image_shape[1]), , , , drop = FALSE]
 }
 
+.coerce_reference_images_like_mst_pmdn <- function(reference_images,
+                                                     image_inputs) {
+  if (inherits(image_inputs, "torch_tensor")) {
+    if (!inherits(reference_images, "torch_tensor")) {
+      return(torch_tensor(
+        reference_images,
+        dtype = image_inputs$dtype,
+        device = image_inputs$device
+      ))
+    }
+    return(reference_images$to(
+      dtype = image_inputs$dtype,
+      device = image_inputs$device
+    ))
+  }
+  if (inherits(reference_images, "torch_tensor")) {
+    return(torch::as_array(reference_images$to(device = "cpu")))
+  }
+  reference_images
+}
+
+.validate_rebuilt_compatibility_mst_pmdn <- function(candidate,
+                                                       original,
+                                                       name) {
+  candidate_shape <- .image_shape_mst_pmdn(candidate, name)
+  original_shape <- .image_shape_mst_pmdn(original, "rebuilt original images")
+  if (!identical(candidate_shape, original_shape)) {
+    stop(
+      sprintf("%s must match the rebuilt original image shape.", name),
+      call. = FALSE
+    )
+  }
+  candidate_tensor <- inherits(candidate, "torch_tensor")
+  original_tensor <- inherits(original, "torch_tensor")
+  if (!identical(candidate_tensor, original_tensor)) {
+    stop(
+      sprintf(
+        "%s and rebuilt original images must use the same representation.",
+        name
+      ),
+      call. = FALSE
+    )
+  }
+  if (candidate_tensor &&
+      (candidate$dtype != original$dtype ||
+       !identical(format(candidate$device), format(original$device)))) {
+    stop(
+      sprintf(
+        "%s must match the rebuilt original image dtype and device.",
+        name
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 .validate_cases_mst_pmdn <- function(cases, n) {
   if (is.null(cases)) return(seq_len(n))
   if (!is.numeric(cases) || !length(cases) || anyNA(cases) ||
@@ -190,6 +247,9 @@ image_contrast_mst_pmdn <- function(model,
   reference_images <- .broadcast_reference_images_mst_pmdn(
     reference_images, image_shape
   )
+  reference_images <- .coerce_reference_images_like_mst_pmdn(
+    reference_images, image_inputs
+  )
   cases <- .validate_cases_mst_pmdn(cases, nrow(inputs_matrix))
   case_inputs <- inputs_matrix[cases, , drop = FALSE]
   base <- .subset_rows_mst_pmdn(image_inputs, cases)
@@ -209,6 +269,11 @@ image_contrast_mst_pmdn <- function(model,
     .one_mask_mst_pmdn(base, n),
     rebuild_channels,
     cases
+  )
+  .validate_rebuilt_compatibility_mst_pmdn(
+    reference_model_images,
+    original_images,
+    "rebuilt reference images"
   )
   pred_original <- .predict_chunks_mst_pmdn(
     model, case_inputs, original_images,
@@ -366,6 +431,9 @@ image_occlusion_mst_pmdn <- function(model,
   reference_images <- .broadcast_reference_images_mst_pmdn(
     reference_images, image_shape
   )
+  reference_images <- .coerce_reference_images_like_mst_pmdn(
+    reference_images, image_inputs
+  )
   groups <- .normalize_channel_groups_mst_pmdn(
     channel_groups, image_shape[2]
   )
@@ -439,6 +507,11 @@ image_occlusion_mst_pmdn <- function(model,
       )
       occluded_images <- .rebuild_or_blend_images_mst_pmdn(
         base, reference, masks, rebuild_channels, cases
+      )
+      .validate_rebuilt_compatibility_mst_pmdn(
+        occluded_images,
+        original_images,
+        "rebuilt occluded images"
       )
       pred_occluded <- .predict_chunks_mst_pmdn(
         model, case_inputs, occluded_images,
@@ -556,7 +629,7 @@ image_occlusion_mst_pmdn <- function(model,
       original = original_result$diagnostics,
       occluded = diagnostics,
       max_abs_sum_to_total_residual = if (length(active_channels)) {
-        max(abs(data$sum_to_total_residual), na.rm = TRUE)
+        .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
       } else {
         NA_real_
       }

@@ -50,7 +50,9 @@ parameter-channel maps, and numerical closure residuals.
 \details{
 The callback can perturb a scientifically fundamental field, recompute linked
 channels such as pressure gradients, apply original preprocessing, and return
-the complete model-ready tensor. Overlapping patch effects are spatial
-sensitivity measures: parameter channels sum within each patch, but effects
-generally do not sum across patches to the whole-image contrast.
+the complete model-ready tensor. Rebuilt original and occluded states must
+have matching shapes, representations, dtypes, and devices. Overlapping patch
+effects are spatial sensitivity measures: parameter channels sum within each
+patch, but effects generally do not sum across patches to the whole-image
+contrast.
 }

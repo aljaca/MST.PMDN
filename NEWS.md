@@ -12,7 +12,9 @@
   Student-t scaling. Fixed banks preserve dtype and make chunked and unchunked
   functional evaluation identical.
 - Tail summaries now report expected tail-draw counts and warn when Monte Carlo
-  resolution is inadequate.
+  resolution is inadequate. Counts use untransformed probabilities, and ALE
+  diagnostics summarize the states actually evaluated rather than a nominal
+  probability.
 - Exact-Gaussian degrees-of-freedom diagnostics retain `Inf` without an
   undefined-moment warning.
 
@@ -25,7 +27,8 @@
   with signed, absolute, and sign-consistency population summaries.
 - Added a `rebuild_channels` callback contract for perturbing fundamental
   physical fields and rebuilding deterministically linked image channels before
-  model evaluation.
+  model evaluation. Reference images are aligned to the source representation,
+  dtype, and device, and rebuilt states are checked for mutual compatibility.
 
 ## Distributional attribution
 

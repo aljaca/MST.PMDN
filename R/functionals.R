@@ -371,6 +371,16 @@ print.mst_functional <- function(x, ...) {
   )
 }
 
+.min_finite_mst_pmdn <- function(x) {
+  x <- x[is.finite(x)]
+  if (length(x)) min(x) else NA_real_
+}
+
+.max_abs_finite_mst_pmdn <- function(x) {
+  x <- abs(x[is.finite(x)])
+  if (length(x)) max(x) else NA_real_
+}
+
 .analytic_functional_mst_pmdn <- function(pred, functional, responses) {
   type <- functional$type
   info <- .validate_prediction_mst_pmdn(pred)
@@ -537,12 +547,7 @@ print.mst_functional <- function(x, ...) {
     ))
   }
   if (type %in% c("exceedance", "joint_exceedance")) {
-    probability <- if (functional$transform == "logit") {
-      stats::plogis(values)
-    } else {
-      values
-    }
-    return(num_samples * pmin(probability, 1 - probability))
+    return(num_samples * pmin(values, 1 - values))
   }
   rep(NA_real_, length(values))
 }
@@ -623,15 +628,14 @@ functional_mst_pmdn <- function(pred,
       .analytic_functional_mst_pmdn(chunk, functional, responses)
     }
   }
-  values <- .apply_functional_transform_mst_pmdn(
-    values, functional, if (is_mc) num_samples else NULL
-  )
-
   expected_tail_draws <- if (is_mc) {
     .tail_resolution_mst_pmdn(values, functional, num_samples)
   } else {
     rep(NA_real_, info$batch_size)
   }
+  values <- .apply_functional_transform_mst_pmdn(
+    values, functional, if (is_mc) num_samples else NULL
+  )
   low_resolution <- is_mc & !is.na(expected_tail_draws) &
     expected_tail_draws < min_tail_draws
   if (any(low_resolution)) {
@@ -675,7 +679,7 @@ functional_mst_pmdn <- function(pred,
     diagnostics = list(
       low_tail_resolution_rows = which(low_resolution),
       min_expected_tail_draws = if (is_mc) {
-        min(expected_tail_draws, na.rm = TRUE)
+        .min_finite_mst_pmdn(expected_tail_draws)
       } else {
         NA_real_
       }
