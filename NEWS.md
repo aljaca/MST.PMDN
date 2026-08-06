@@ -13,6 +13,8 @@
   functional evaluation identical.
 - Tail summaries now report expected tail-draw counts and warn when Monte Carlo
   resolution is inadequate.
+- Exact-Gaussian degrees-of-freedom diagnostics retain `Inf` without an
+  undefined-moment warning.
 
 ## Covariate and image effects
 
