@@ -117,6 +117,116 @@ test_that("centred ICE includes ALE, derivatives, and Plate data", {
   expect_s3_class(result$ale, "mst_pmdn_ale")
 })
 
+test_that("ALE merges empirically empty bins rather than accumulating NaN", {
+  # Type-7 quartiles are 0, 0.75, 1, 1.25, 2. Because values equal to an
+  # interior boundary enter the upper interval, the (0.75, 1) bin is empty.
+  x <- cbind(feature = c(0, 1, 1, 2), other = 0)
+  result <- ale_mst_pmdn(
+    explanation_test_model(slope = 2),
+    x,
+    feature = 1L,
+    functional = mst_functional("mean", 1L),
+    n_bins = 4L
+  )
+  expect_equal(result$settings$actual_bins, 3L)
+  expect_true(all(result$data$n > 0L))
+  expect_true(all(is.finite(result$data$ale)))
+  expect_equal(sum(result$data$n), nrow(x))
+})
+
+test_that("finite skewed mixture ALE reaches the complete sampling path", {
+  x <- cbind(feature = seq(-1, 1, length.out = 8), other = 0)
+  image <- array(seq(0.1, 0.8, length.out = 8), c(8, 1, 1, 1))
+  model <- distribution_explanation_test_model(n_mixtures = 2L)
+  functional <- mst_functional(
+    "joint_exceedance", c(1L, 2L), threshold = c(0, 0)
+  )
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 2L, seed = 61)
+  result <- suppressWarnings(ale_mst_pmdn(
+    model,
+    x,
+    feature = 1L,
+    image_inputs = image,
+    functional = functional,
+    n_bins = 3L,
+    latent_draws = bank,
+    chunk_size = 2L
+  ))
+  expect_true(all(is.finite(result$data$ale)))
+  expect_equal(sum(result$data$n), nrow(x))
+})
+
+test_that("multi-channel ALE decomposition integrates Shapley bin effects", {
+  x <- cbind(feature = seq(-1, 1, length.out = 6), other = 0)
+  model <- distribution_explanation_test_model(n_mixtures = 1L)
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 2L, seed = 62)
+  result <- suppressWarnings(ale_mst_pmdn(
+    model,
+    x,
+    feature = 1L,
+    functional = mst_functional("quantile", 1L, prob = 0.8),
+    n_bins = 2L,
+    decompose = TRUE,
+    latent_draws = bank,
+    chunk_size = 2L
+  ))
+  expect_setequal(
+    result$active_channels,
+    c("location", "scale", "skewness", "df")
+  )
+  expect_equal(result$data$sum_to_total_residual, rep(0, nrow(result$data)),
+               tolerance = 1e-9)
+  expect_true(any(abs(result$data$ale_scale) > 0))
+  expect_true(any(abs(result$data$ale_skewness) > 0))
+  expect_true(any(abs(result$data$ale_df) > 0))
+})
+
+test_that("ALE decomposition rejects mixtures before bin evaluation", {
+  x <- cbind(feature = seq(-1, 1, length.out = 6), other = 0)
+  expect_error(
+    ale_mst_pmdn(
+      distribution_explanation_test_model(n_mixtures = 2L),
+      x,
+      feature = 1L,
+      functional = mst_functional("mean", 1L),
+      n_bins = 2L,
+      decompose = TRUE
+    ),
+    "only available for M = 1"
+  )
+})
+
+test_that("ICE can omit or reuse its population ALE overlay", {
+  x <- cbind(feature = seq(-1, 1, length.out = 11), other = 0)
+  model <- explanation_test_model(slope = 2)
+  functional <- mst_functional("mean", 1L)
+  precomputed <- ale_mst_pmdn(
+    model, x, 1L, functional, n_bins = 3L
+  )
+  reused <- ice_mst_pmdn(
+    model,
+    x,
+    1L,
+    functional,
+    grid = c(-1, 0, 1),
+    n_curves = 3L,
+    ale = precomputed
+  )
+  omitted <- ice_mst_pmdn(
+    model,
+    x,
+    1L,
+    functional,
+    grid = c(-1, 0, 1),
+    n_curves = 3L,
+    ale = FALSE
+  )
+  expect_identical(reused$ale, precomputed)
+  expect_identical(reused$settings$ale, "supplied")
+  expect_null(omitted$ale)
+  expect_identical(omitted$settings$ale, "none")
+})
+
 test_that("channel-specific ALE closes to the total effect", {
   x <- cbind(feature = seq(-1, 1, length.out = 31), other = 0)
   model <- explanation_test_model(slope = 2)

@@ -39,6 +39,9 @@ contribution \eqn{r_g=\pi_g p_g}, and tail share
 \eqn{\rho_g=r_g/\sum_h r_h}. Contribution ranks and the unordered set of
 contributions are invariant to component-label permutations. Quantiles have no
 corresponding additive component decomposition.
+Each component probability is evaluated directly and then weighted analytically
+by \eqn{\pi_g}; the calculation does not spend only \eqn{\pi_g} of the latent
+draws on a low-weight component.
 }
 \value{
 An \code{mst_pmdn_tail_components} object with one data-frame row per

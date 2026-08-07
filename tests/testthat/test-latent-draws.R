@@ -19,6 +19,33 @@ test_that("fixed latent banks are reproducible and preserve dtype", {
   )
 })
 
+test_that("latent seeds leave the R RNG stream unchanged", {
+  set.seed(1234)
+  before <- .Random.seed
+  latent_draws_mst_pmdn(16L, output_dim = 1L, seed = 99)
+  expect_identical(.Random.seed, before)
+})
+
+test_that("finite-df Gamma transforms reuse repeated selected df states", {
+  pred <- make_mdn_output(
+    pi = matrix(1, 1, 1),
+    mu = array(0, c(1, 1, 1)),
+    scale_chol = array(1, c(1, 1, 1, 1)),
+    nu = matrix(7, 1, 1),
+    alpha = array(0.3, c(1, 1, 1))
+  )
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 1L, seed = 100)
+  functional <- mst_functional("quantile", 1L, prob = 0.8)
+  suppressWarnings(functional_mst_pmdn(
+    pred, functional, latent_draws = bank
+  ))
+  suppressWarnings(functional_mst_pmdn(
+    pred, functional, latent_draws = bank
+  ))
+  expect_equal(bank$.cache$gamma_scale_misses, 1L)
+  expect_equal(bank$.cache$gamma_scale_hits, 1L)
+})
+
 test_that("latent-bank sampling uses R torch one-based component indices", {
   pred <- make_mdn_output(
     pi = rbind(c(1, 0), c(0, 1)),

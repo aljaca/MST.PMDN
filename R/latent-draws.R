@@ -13,14 +13,14 @@
   as.integer(seed)
 }
 
-#' Create a parameter-independent MST-PMDN latent bank
-#'
-#' The bank contains uniforms for inverse-CDF component selection, standard
-#' normals for the skew-normal construction, and uniforms that are transformed
-#' through the Gamma quantile function for finite Student-t scaling. One latent
-#' sequence is shared across prediction rows. This deliberately correlates
-#' Monte Carlo error across rows while leaving every row's marginal predictive
-#' distribution unchanged, and makes case chunking exactly reproducible.
+# Create a parameter-independent MST-PMDN latent bank
+#
+# The bank contains uniforms for inverse-CDF component selection, standard
+# normals for the skew-normal construction, and uniforms that are transformed
+# through the Gamma quantile function for finite Student-t scaling. One latent
+# sequence is shared across prediction rows. This deliberately correlates
+# Monte Carlo error across rows while leaving every row's marginal predictive
+# distribution unchanged, and makes case chunking exactly reproducible.
 latent_draws_mst_pmdn <- function(num_samples = 4096L,
                                   output_dim,
                                   dtype = torch_float(),
@@ -35,10 +35,7 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   output_dim <- as.integer(output_dim)
   seed <- .validate_seed_mst_pmdn(seed)
   if (!is.null(seed)) {
-    set.seed(seed)
-    if (exists("torch_manual_seed", mode = "function")) {
-      torch_manual_seed(seed)
-    }
+    torch_manual_seed(seed)
   }
 
   out <- list(
@@ -58,7 +55,8 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     output_dim = output_dim,
     dtype = dtype,
     device = device,
-    seed = seed
+    seed = seed,
+    .cache = new.env(parent = emptyenv())
   )
   class(out) <- "mst_pmdn_latent_draws"
   out
@@ -122,6 +120,9 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   latent_draws$output_dim <- output_dim
   latent_draws$dtype <- dtype
   latent_draws$device <- device
+  if (!is.environment(latent_draws$.cache)) {
+    latent_draws$.cache <- new.env(parent = emptyenv())
+  }
   class(latent_draws) <- "mst_pmdn_latent_draws"
   latent_draws
 }
@@ -141,7 +142,10 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     to(dtype = torch_long())
 }
 
-.gamma_scale_from_uniform_mst_pmdn <- function(nu, gamma_u, device) {
+.gamma_scale_from_uniform_mst_pmdn <- function(nu,
+                                                gamma_u,
+                                                device,
+                                                cache = NULL) {
   B <- nu$size(1)
   S <- nu$size(2)
   normal <- nu == Inf
@@ -150,11 +154,63 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   }
 
   nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
-  u <- gamma_u$transpose(1L, 2L)$expand(c(B, S))
-  u_r <- as.numeric(torch::as_array(u$to(device = "cpu")))
-  nu_r <- as.numeric(torch::as_array(nu_safe$to(device = "cpu")))
-  u_r <- pmin(pmax(u_r, .Machine$double.xmin), 1 - .Machine$double.eps)
-  chi2_r <- stats::qgamma(u_r, shape = nu_r / 2, scale = 2)
+  nu_key <- as.numeric(torch::as_array(nu$to(device = "cpu")))
+  entries <- if (is.environment(cache) &&
+                 is.list(cache$gamma_scale_entries)) {
+    cache$gamma_scale_entries
+  } else {
+    list()
+  }
+  hit <- which(vapply(entries, function(entry) {
+    identical(entry$dim, c(B, S)) && identical(entry$nu, nu_key)
+  }, logical(1)))[1L]
+
+  if (length(hit) && !is.na(hit)) {
+    chi2_r <- entries[[hit]]$chi2
+    cache$gamma_scale_hits <- if (is.null(cache$gamma_scale_hits)) {
+      1L
+    } else {
+      cache$gamma_scale_hits + 1L
+    }
+  } else {
+    if (is.environment(cache) &&
+        is.numeric(cache$gamma_uniform) &&
+        length(cache$gamma_uniform) == S) {
+      gamma_uniform <- cache$gamma_uniform
+    } else {
+      gamma_uniform <- as.numeric(torch::as_array(
+        gamma_u$to(device = "cpu")
+      ))
+      gamma_uniform <- pmin(
+        pmax(gamma_uniform, .Machine$double.xmin),
+        1 - .Machine$double.eps
+      )
+      if (is.environment(cache)) cache$gamma_uniform <- gamma_uniform
+    }
+    u_r <- rep(gamma_uniform, each = B)
+    nu_r <- as.numeric(torch::as_array(nu_safe$to(device = "cpu")))
+    chi2_r <- stats::qgamma(u_r, shape = nu_r / 2, scale = 2)
+    if (is.environment(cache)) {
+      entries[[length(entries) + 1L]] <- list(
+        dim = c(B, S), nu = nu_key, chi2 = chi2_r
+      )
+      # Shapley evaluation repeatedly visits only a few df states. Bound both
+      # entry count and total elements so caching cannot defeat the functional
+      # evaluator's memory budget during a long ALE calculation.
+      while (length(entries) > 8L ||
+             (length(entries) > 1L && sum(vapply(
+               entries, function(entry) length(entry$chi2), integer(1)
+             )) > 2e6)) {
+        entries <- entries[-1L]
+      }
+      cache$gamma_scale_entries <- entries
+      cache$gamma_scale_misses <- if (is.null(cache$gamma_scale_misses)) {
+        1L
+      } else {
+        cache$gamma_scale_misses + 1L
+      }
+    }
+  }
   chi2 <- torch_tensor(
     matrix(chi2_r, nrow = B, ncol = S),
     dtype = nu$dtype,
@@ -183,7 +239,10 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   chol_s <- scale_chol$gather(2L, idx_dd)
   nu_s <- nu$gather(2L, idx)
   W <- .gamma_scale_from_uniform_mst_pmdn(
-    nu_s, latent_draws$gamma_u, device = device
+    nu_s,
+    latent_draws$gamma_u,
+    device = device,
+    cache = latent_draws$.cache
   )$unsqueeze(3L)
 
   z1 <- latent_draws$skew_z$unsqueeze(1L)$expand(c(B, S, d))

@@ -14,7 +14,12 @@
 - Tail summaries now report expected tail-draw counts and warn when Monte Carlo
   resolution is inadequate. Counts use untransformed probabilities, and ALE
   diagnostics summarize the states actually evaluated rather than a nominal
-  probability.
+  probability. Mixture diagnostics also report expected draws by component and
+  identify the row-shared component uniforms used by common random numbers.
+- Tail asymmetry is now the normalized generalized Bowley coefficient rather
+  than its response-scale numerator. Gamma quantile transforms are reused for
+  repeated finite-df states, adaptive chunks account for the quadratic
+  response-dimension gather, and latent-bank seeds no longer alter R's RNG.
 - Exact-Gaussian degrees-of-freedom diagnostics retain `Inf` without an
   undefined-moment warning.
 
@@ -23,6 +28,9 @@
 - Added one-dimensional accumulated local effects, centred ICE curves, local
   finite-difference slopes, and Plate-style baseline-contrast/slope data.
   Case-matched image rows remain fixed during tabular perturbations.
+- ALE now merges empirically empty bins, rejects mixture decomposition before
+  bin evaluation, and documents its within-bin linear midpoint convention. ICE
+  can omit its full-data ALE overlay or reuse a precomputed one.
 - Added whole-image functional contrasts and tapered spatial occlusion maps,
   with signed, absolute, and sign-consistency population summaries.
 - Added a `rebuild_channels` callback contract for perturbing fundamental
@@ -41,6 +49,11 @@
   mixtures.
 - Added base-R S3 plotting methods, manual pages, wave-surge and synthetic
   workflow examples, and CPU/float32/float64/conditional-CUDA regression tests.
+- Plot methods now expose their standard graphical arguments without `...`
+  collisions, and irregular occlusion grids render without raster assumptions.
+  The wave-surge image explanation is gated on an exact physical-channel
+  rebuilding callback instead of independently masking pressure and its
+  deterministic gradient.
 
 # MST.PMDN 0.2.1
 

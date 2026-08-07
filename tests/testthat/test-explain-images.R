@@ -126,3 +126,74 @@ test_that("image occlusion can return single-component channel maps", {
                tolerance = 1e-6)
   expect_equal(result$data$sum_to_total_residual, 0, tolerance = 1e-10)
 })
+
+test_that("finite skewed mixture occlusion reaches complete functional sampling", {
+  x <- cbind(feature = c(-0.25, 0.5), other = 0)
+  image <- array(c(1, 2), c(2, 1, 1, 1))
+  reference <- array(0, c(1, 1, 1, 1))
+  model <- distribution_explanation_test_model(n_mixtures = 2L)
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 2L, seed = 71)
+  result <- suppressWarnings(image_occlusion_mst_pmdn(
+    model,
+    x,
+    image,
+    reference,
+    mst_functional(
+      "joint_exceedance", c(1L, 2L), threshold = c(0, 0)
+    ),
+    patch_size = c(1L, 1L),
+    stride = c(1L, 1L),
+    taper = "none",
+    latent_draws = bank,
+    chunk_size = 1L
+  ))
+  expect_true(all(is.finite(result$data$effect)))
+  expect_equal(nrow(result$data), 2L)
+})
+
+test_that("multi-channel image decomposition closes within each patch", {
+  x <- cbind(feature = 0, other = 0)
+  image <- array(1, c(1, 1, 2, 2))
+  reference <- array(0, c(1, 1, 2, 2))
+  model <- distribution_explanation_test_model(n_mixtures = 1L)
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 2L, seed = 72)
+  result <- suppressWarnings(image_occlusion_mst_pmdn(
+    model,
+    x,
+    image,
+    reference,
+    mst_functional("quantile", 1L, prob = 0.8),
+    patch_size = c(2L, 2L),
+    stride = c(1L, 1L),
+    taper = "none",
+    decompose = TRUE,
+    latent_draws = bank
+  ))
+  expect_setequal(
+    result$active_channels,
+    c("location", "scale", "skewness", "df")
+  )
+  expect_equal(result$data$sum_to_total_residual, 0, tolerance = 1e-9)
+  for (channel in result$active_channels) {
+    expect_true(paste0("channel_", channel) %in% names(result$data))
+  }
+})
+
+test_that("image decomposition rejects mixtures before patch evaluation", {
+  x <- cbind(feature = 0, other = 0)
+  image <- array(1, c(1, 1, 2, 2))
+  reference <- array(0, c(1, 1, 2, 2))
+  expect_error(
+    image_occlusion_mst_pmdn(
+      distribution_explanation_test_model(n_mixtures = 2L),
+      x,
+      image,
+      reference,
+      mst_functional("mean", 1L),
+      patch_size = c(1L, 1L),
+      stride = c(1L, 1L),
+      decompose = TRUE
+    ),
+    "only available for M = 1"
+  )
+})

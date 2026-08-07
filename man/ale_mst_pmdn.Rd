@@ -44,11 +44,14 @@ ale_mst_pmdn(
 }
 \details{
 ALE replaces a feature by its lower and upper empirical-bin boundaries only
-for rows observed in that bin. Local differences are averaged, accumulated at
-bin midpoints, and empirically centred. This makes ALE the preferred population
-summary when meteorological predictors are correlated. For Monte Carlo
-functionals, diagnostics report the minimum expected tail-draw count actually
-encountered at the evaluated bin endpoints or hybrid parameter states.
+for rows observed in that bin, merging empirically empty bins when necessary.
+Local differences are averaged, accumulated at bin midpoints, and empirically
+centred. The midpoint value subtracts half of the current bin effect, a
+within-bin linear interpolation convention rather than the boundary-valued
+definition in Apley and Zhu. This makes ALE the preferred population summary
+when meteorological predictors are correlated. For Monte Carlo functionals,
+diagnostics report the minimum expected tail-draw count actually encountered at
+the evaluated bin endpoints or hybrid parameter states.
 }
 \value{
 An \code{mst_pmdn_ale} object with \code{data}, breaks, settings, and

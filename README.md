@@ -449,31 +449,31 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Functions: `mst_functional(...)` and `functional_mst_pmdn(...)`
 
 *   **Purpose:** Define and evaluate one scalar scientific summary per prediction row.
-*   **Method:** Means, variances, standard deviations, covariance, and correlation use exact component and mixture moments, including between-component covariance. Quantiles, marginal and joint exceedances, tail spread, and tail asymmetry use a parameter-independent latent bank created by `latent_draws_mst_pmdn()`.
-*   **Diagnostics:** Tail summaries report the expected number of Monte Carlo draws in the relevant tail and flag inadequate resolution. Exact moments return undefined values when finite degrees of freedom do not support them.
+*   **Method:** Means, variances, standard deviations, covariance, and correlation use exact component and mixture moments, including between-component covariance. Quantiles, marginal and joint exceedances, tail spread, and normalized generalized Bowley tail asymmetry use a parameter-independent latent bank created by `latent_draws_mst_pmdn()`.
+*   **Diagnostics:** Tail summaries report the expected number of Monte Carlo draws in the relevant tail and flag inadequate resolution. Mixture results separately retain expected component draw counts; because component uniforms are shared across rows, component-selection Monte Carlo error does not average away along an effect curve. Exact moments return undefined values when finite degrees of freedom do not support them.
 
 #### Functions: `ale_mst_pmdn(...)` and `ice_mst_pmdn(...)`
 
 *   **Purpose:** Explain how a tabular covariate changes a selected distribution functional.
-*   **Method:** One-dimensional ALE uses empirical bins and locally supported lower-to-upper contrasts. Centred ICE shows case-level heterogeneity, an ALE overlay, optional local slopes, and Plate-style baseline-contrast/slope data. A case's image remains aligned and fixed during tabular perturbations.
+*   **Method:** One-dimensional ALE uses non-empty empirical bins and locally supported lower-to-upper contrasts. Effects are displayed at bin midpoints by subtracting half the current bin effect, which assumes within-bin linearity rather than using the boundary-valued Apley-Zhu convention. Centred ICE shows case-level heterogeneity, an optional or precomputed ALE overlay, optional local slopes, and Plate-style baseline-contrast/slope data. A case's image remains aligned and fixed during tabular perturbations.
 *   **Scope:** A named feature is accepted when input columns are named; otherwise use R's 1-based column indices. Deterministically linked predictors, such as sine/cosine seasonal harmonics, should be perturbed as a scientifically coherent group outside this one-dimensional API.
 
 #### Functions: `image_contrast_mst_pmdn(...)` and `image_occlusion_mst_pmdn(...)`
 
 *   **Purpose:** Measure whole-image and spatial patch effects on the same scalar functionals used by the tabular layer.
-*   **Method:** Observed image regions are replaced by a required reference field, optionally with cosine tapering and overlapping patches. A `rebuild_channels` callback can perturb a fundamental physical field, recompute linked channels such as pressure gradients, apply the original preprocessing, and return a complete model-ready tensor.
+*   **Method:** Observed image regions are replaced by a required reference field, optionally with cosine tapering and overlapping patches. When an input channel is deterministically derived from another, a `rebuild_channels` callback should perturb the fundamental physical field, recompute every linked channel such as a pressure gradient, apply the original preprocessing, and return a complete model-ready tensor.
 *   **Interpretation:** Patch effects are spatial sensitivity measures. They do not generally add across overlapping patches to the whole-image contrast.
 
 #### Function: `decompose_mst_pmdn(...)`
 
 *   **Purpose:** For one-component models, allocate a known functional contrast among location, complete scale, skewness, and degrees-of-freedom channels.
-*   **Method:** Exact Shapley averaging evaluates all hybrid parameter states—16 when all four channels are active—and reports the numerical sum-to-total residual. Structurally inactive or unchanged channels disappear automatically.
+*   **Method:** Exact Shapley averaging evaluates all hybrid parameter states—16 when all four channels are active—and reports the numerical sum-to-total residual. Structurally inactive or unchanged channels disappear automatically. The complete Cholesky factor is the scale block; because it maps standardized skew direction into response space, its contribution includes the induced rotation of that direction.
 *   **Scope:** This is parameter-channel attribution rather than feature SHAP. Full channel decomposition is disabled for mixtures because component labels and compensating component changes are not identified.
 
 #### Function: `tail_components_mst_pmdn(...)`
 
 *   **Purpose:** Provide a mixture-safe explanation of exceedance probability.
-*   **Output:** For each component, reports its weight, within-component exceedance probability, contribution to total exceedance probability, tail share, and contribution rank. Component labels remain descriptive indices rather than assumed physical regimes.
+*   **Output:** For each component, reports its weight, within-component exceedance probability, contribution to total exceedance probability, tail share, and contribution rank. Probability is estimated directly within each component and combined analytically with its mixture weight, avoiding extra mixture-selection noise. Component labels remain descriptive indices rather than assumed physical regimes.
 
 
 ## References

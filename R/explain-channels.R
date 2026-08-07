@@ -54,7 +54,13 @@
   }
   if ("skewness" %in% selected_channels) {
     out$alpha <- pred_to$alpha
-    out$skew_none <- pred_to$skew_none
+    # Assigning NULL deliberately removes the optional legacy marker; the
+    # validator then infers the skew path from alpha.
+    if (is.null(pred_to$skew_none)) {
+      out$skew_none <- NULL
+    } else {
+      out$skew_none <- pred_to$skew_none
+    }
   }
   if ("df" %in% selected_channels) out$nu <- pred_to$nu
   out
@@ -66,7 +72,21 @@
   channels[bitwAnd(mask, bits) != 0L]
 }
 
-#' Decompose a one-component functional contrast among parameter channels
+.require_single_component_mst_pmdn <- function(pred) {
+  info <- .validate_prediction_mst_pmdn(pred)
+  if (info$n_mixtures != 1L) {
+    stop(
+      paste0(
+        "Full parameter-channel decomposition is only available for M = 1. ",
+        "Use functional effects or tail_components_mst_pmdn() for mixtures."
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(info)
+}
+
+# Decompose a one-component functional contrast among parameter channels
 decompose_mst_pmdn <- function(pred_from,
                                pred_to,
                                functional,
@@ -86,15 +106,7 @@ decompose_mst_pmdn <- function(pred_from,
     stop("pred_from and pred_to must have matching prediction dimensions.",
          call. = FALSE)
   }
-  if (from_info$n_mixtures != 1L) {
-    stop(
-      paste0(
-        "Full parameter-channel decomposition is only available for M = 1. ",
-        "Use functional effects or tail_components_mst_pmdn() for mixtures."
-      ),
-      call. = FALSE
-    )
-  }
+  .require_single_component_mst_pmdn(pred_from)
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }

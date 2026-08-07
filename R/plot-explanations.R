@@ -2,13 +2,19 @@
 # Dependency-free base graphics for MST-PMDN explanation objects              #
 ################################################################################
 
-plot.mst_pmdn_functional <- function(x, ...) {
+plot.mst_pmdn_functional <- function(x,
+                                     type = "l",
+                                     xlab = "Prediction row",
+                                     ylab = x$functional$type,
+                                     main = NULL,
+                                     ...) {
   graphics::plot(
     x$data$row,
     x$data$value,
-    type = "l",
-    xlab = "Prediction row",
-    ylab = x$functional$type,
+    type = type,
+    xlab = xlab,
+    ylab = ylab,
+    main = main,
     ...
   )
   invisible(x)
@@ -16,6 +22,9 @@ plot.mst_pmdn_functional <- function(x, ...) {
 
 plot.mst_pmdn_ale <- function(x,
                               type = c("total", "channels"),
+                              xlab = x$feature$name,
+                              ylab = NULL,
+                              main = NULL,
                               ...) {
   type <- match.arg(type)
   data <- x$data
@@ -24,8 +33,9 @@ plot.mst_pmdn_ale <- function(x,
       data$feature_value,
       data$ale,
       type = "b",
-      xlab = x$feature$name,
-      ylab = paste("ALE of", x$functional$type),
+      xlab = xlab,
+      ylab = if (is.null(ylab)) paste("ALE of", x$functional$type) else ylab,
+      main = main,
       ...
     )
     graphics::abline(h = 0, lty = 2, col = "grey60")
@@ -36,6 +46,7 @@ plot.mst_pmdn_ale <- function(x,
   on.exit(graphics::par(old_par), add = TRUE)
   panels <- c("ale", paste0("ale_", x$active_channels))
   labels <- c("total", x$active_channels)
+  panel_ylab <- if (is.null(ylab)) labels else rep_len(ylab, length(panels))
   graphics::par(
     mfrow = c(length(panels), 1L),
     mar = c(2.5, 4, 1.5, 1),
@@ -46,8 +57,9 @@ plot.mst_pmdn_ale <- function(x,
       data$feature_value,
       data[[panels[i]]],
       type = "b",
-      xlab = if (i == length(panels)) x$feature$name else "",
-      ylab = labels[i],
+      xlab = if (i == length(panels)) xlab else "",
+      ylab = panel_ylab[i],
+      main = if (i == 1L) main else NULL,
       ...
     )
     graphics::abline(h = 0, lty = 2, col = "grey60")
@@ -65,6 +77,10 @@ plot.mst_pmdn_ale <- function(x,
 
 plot.mst_pmdn_ice <- function(x,
                               type = c("ice", "plate"),
+                              xlab = NULL,
+                              ylab = NULL,
+                              main = NULL,
+                              pch = 19,
                               ...) {
   type <- match.arg(type)
   if (type == "plate") {
@@ -75,9 +91,10 @@ plot.mst_pmdn_ice <- function(x,
     graphics::plot(
       x$plate$baseline_contrast,
       x$plate$local_slope,
-      pch = 19,
-      xlab = "Baseline contrast",
-      ylab = "Local slope",
+      pch = pch,
+      xlab = if (is.null(xlab)) "Baseline contrast" else xlab,
+      ylab = if (is.null(ylab)) "Local slope" else ylab,
+      main = main,
       ...
     )
     graphics::abline(h = 0, v = 0, lty = 2, col = "grey70")
@@ -89,8 +106,13 @@ plot.mst_pmdn_ice <- function(x,
     range(x$grid),
     y_range,
     type = "n",
-    xlab = x$feature$name,
-    ylab = paste("Centred ICE of", x$functional$type),
+    xlab = if (is.null(xlab)) x$feature$name else xlab,
+    ylab = if (is.null(ylab)) {
+      paste("Centred ICE of", x$functional$type)
+    } else {
+      ylab
+    },
+    main = main,
     ...
   )
   for (case in x$cases) {
@@ -100,28 +122,39 @@ plot.mst_pmdn_ice <- function(x,
       col = grDevices::adjustcolor("grey35", alpha.f = 0.25)
     )
   }
-  ale <- x$ale$data
-  reference_ale <- stats::approx(
-    ale$feature_value, ale$ale, xout = x$reference, rule = 2
-  )$y
-  graphics::lines(
-    ale$feature_value,
-    ale$ale - reference_ale,
-    col = "black",
-    lwd = 3
-  )
+  if (!is.null(x$ale)) {
+    ale <- x$ale$data
+    reference_ale <- stats::approx(
+      ale$feature_value, ale$ale, xout = x$reference, rule = 2
+    )$y
+    graphics::lines(
+      ale$feature_value,
+      ale$ale - reference_ale,
+      col = "black",
+      lwd = 3
+    )
+  }
   graphics::abline(h = 0, lty = 2, col = "grey60")
   invisible(x)
 }
 
-plot.mst_pmdn_decomposition <- function(x, row = 1L, ...) {
+plot.mst_pmdn_decomposition <- function(x,
+                                        row = 1L,
+                                        xlab = "",
+                                        ylab = NULL,
+                                        main = NULL,
+                                        ...) {
   if (!is.numeric(row) || length(row) != 1L || row < 1L ||
       row > nrow(x$data) || row != floor(row)) {
     stop("row must select one decomposition row.", call. = FALSE)
   }
   if (!length(x$active_channels)) {
     graphics::plot.new()
-    graphics::title("No active parameter channels")
+    graphics::title(
+      main = if (is.null(main)) "No active parameter channels" else main,
+      xlab = xlab,
+      ylab = ylab
+    )
     return(invisible(x))
   }
   values <- vapply(
@@ -129,15 +162,20 @@ plot.mst_pmdn_decomposition <- function(x, row = 1L, ...) {
     function(channel) x$data[[paste0("channel_", channel)]][row],
     numeric(1)
   )
-  graphics::barplot(
-    values,
-    names.arg = x$active_channels,
-    ylab = paste("Contribution to", x$functional$type),
-    main = sprintf(
+  if (is.null(ylab)) ylab <- paste("Contribution to", x$functional$type)
+  if (is.null(main)) {
+    main <- sprintf(
       "Total %s; residual %s",
       format(x$data$total[row], digits = 4),
       format(x$data$sum_to_total_residual[row], digits = 3)
-    ),
+    )
+  }
+  graphics::barplot(
+    values,
+    names.arg = x$active_channels,
+    xlab = xlab,
+    ylab = ylab,
+    main = main,
     ...
   )
   graphics::abline(h = 0, col = "grey40")
@@ -147,13 +185,21 @@ plot.mst_pmdn_decomposition <- function(x, row = 1L, ...) {
 plot.mst_pmdn_image_contrast <- function(x,
                                          type = c("distribution", "cases", "channels"),
                                          row = 1L,
+                                         xlab = NULL,
+                                         ylab = NULL,
+                                         main = NULL,
                                          ...) {
   type <- match.arg(type)
   if (type == "distribution") {
     graphics::hist(
       x$data$contrast,
-      xlab = paste("Whole-image contrast in", x$functional$type),
-      main = "",
+      xlab = if (is.null(xlab)) {
+        paste("Whole-image contrast in", x$functional$type)
+      } else {
+        xlab
+      },
+      ylab = if (is.null(ylab)) "Frequency" else ylab,
+      main = if (is.null(main)) "" else main,
       ...
     )
     graphics::abline(v = 0, lty = 2, col = "grey50")
@@ -162,8 +208,9 @@ plot.mst_pmdn_image_contrast <- function(x,
       x$data$case,
       x$data$contrast,
       type = "h",
-      xlab = "Case",
-      ylab = "Whole-image contrast",
+      xlab = if (is.null(xlab)) "Case" else xlab,
+      ylab = if (is.null(ylab)) "Whole-image contrast" else ylab,
+      main = main,
       ...
     )
     graphics::abline(h = 0, lty = 2, col = "grey50")
@@ -184,7 +231,9 @@ plot.mst_pmdn_image_contrast <- function(x,
     graphics::barplot(
       values,
       names.arg = x$active_channels,
-      ylab = "Whole-image contribution",
+      xlab = if (is.null(xlab)) "" else xlab,
+      ylab = if (is.null(ylab)) "Whole-image contribution" else ylab,
+      main = main,
       ...
     )
     graphics::abline(h = 0, col = "grey50")
@@ -217,6 +266,12 @@ plot.mst_pmdn_image_occlusion <- function(x,
                                           case = NULL,
                                           group = NULL,
                                           statistic = NULL,
+                                          xlab = "Image column",
+                                          ylab = "Image row",
+                                          main = NULL,
+                                          col = NULL,
+                                          zlim = NULL,
+                                          useRaster = FALSE,
                                           ...) {
   if (is.null(group)) group <- names(x$channel_groups)[1L]
   if (!group %in% names(x$channel_groups)) {
@@ -243,18 +298,22 @@ plot.mst_pmdn_image_occlusion <- function(x,
   map <- .occlusion_map_matrix_mst_pmdn(data, statistic)
   limit <- max(abs(map$z), na.rm = TRUE)
   if (!is.finite(limit) || limit == 0) limit <- 1
-  colours <- grDevices::colorRampPalette(
-    c("#2166AC", "white", "#B2182B")
-  )(101L)
+  if (is.null(col)) {
+    col <- grDevices::colorRampPalette(
+      c("#2166AC", "white", "#B2182B")
+    )(101L)
+  }
+  if (is.null(zlim)) zlim <- c(-limit, limit)
   graphics::image(
     x = map$columns,
     y = map$rows,
     z = map$z,
-    col = colours,
-    zlim = c(-limit, limit),
-    xlab = "Image column",
-    ylab = "Image row",
-    useRaster = TRUE,
+    col = col,
+    zlim = zlim,
+    xlab = xlab,
+    ylab = ylab,
+    main = main,
+    useRaster = useRaster,
     ...
   )
   if (!is.null(case) && startsWith(statistic, "channel_")) {
@@ -273,7 +332,13 @@ plot.mst_pmdn_image_occlusion <- function(x,
   invisible(x)
 }
 
-plot.mst_pmdn_tail_components <- function(x, row = 1L, ...) {
+plot.mst_pmdn_tail_components <- function(
+    x,
+    row = 1L,
+    xlab = "",
+    ylab = expression(pi[g], p[g], pi[g] * p[g]),
+    main = c("Weight", "Within-component", "Contribution"),
+    ...) {
   data <- x$data[x$data$row == row, , drop = FALSE]
   if (!nrow(data)) stop("row is not present in the tail-component object.",
                         call. = FALSE)
@@ -281,20 +346,31 @@ plot.mst_pmdn_tail_components <- function(x, row = 1L, ...) {
   on.exit(graphics::par(old_par), add = TRUE)
   graphics::par(mfrow = c(1L, 3L), mar = c(4, 4, 2, 1))
   labels <- data$component
-  graphics::barplot(data$weight, names.arg = labels, main = "Weight",
-                    ylab = expression(pi[g]), ...)
+  xlab <- rep_len(xlab, 3L)
+  ylab <- rep_len(ylab, 3L)
+  main <- rep_len(main, 3L)
+  graphics::barplot(
+    data$weight,
+    names.arg = labels,
+    xlab = xlab[1L],
+    main = main[1L],
+    ylab = ylab[1L],
+    ...
+  )
   graphics::barplot(
     data$component_probability,
     names.arg = labels,
-    main = "Within-component",
-    ylab = expression(p[g]),
+    xlab = xlab[2L],
+    main = main[2L],
+    ylab = ylab[2L],
     ...
   )
   graphics::barplot(
     data$contribution,
     names.arg = labels,
-    main = "Contribution",
-    ylab = expression(pi[g] * p[g]),
+    xlab = xlab[3L],
+    main = main[3L],
+    ylab = ylab[3L],
     ...
   )
   invisible(x)

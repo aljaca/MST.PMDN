@@ -37,8 +37,11 @@ decompose_mst_pmdn(
 Every hybrid prediction takes each selected parameter block from
 \code{pred_to} and every other block from \code{pred_from}. With all four
 channels active, exact Shapley averaging uses 16 hybrid functional evaluations.
-The complete Cholesky scale factor is one block. This is parameter-channel
-attribution, not feature SHAP.
+The complete Cholesky scale factor is one block. Because skew direction is
+defined in standardized coordinates, changing that factor can rotate the skew
+direction in response space; the scale channel therefore includes that induced
+directional change as well as marginal scale and dependence. This is
+parameter-channel attribution, not feature SHAP.
 
 Unchanged channels, exact fixed degrees of freedom, and structural zero
 skewness disappear automatically. Full decomposition is rejected for mixtures

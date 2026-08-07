@@ -15,7 +15,7 @@
   if (type %in% names(aliases)) aliases[[type]] else type
 }
 
-#' Define a scalar scientific functional of an MST-PMDN prediction
+# Define a scalar scientific functional of an MST-PMDN prediction
 mst_functional <- function(type,
                            responses = NULL,
                            prob = NULL,
@@ -488,7 +488,10 @@ print.mst_functional <- function(x, ...) {
     )
     if (type == "tail_spread") return(q_high - q_low)
     q_mid <- .quantile_columns_mst_pmdn(samples, responses[1L], 0.5)
-    return(q_high + q_low - 2 * q_mid)
+    spread <- q_high - q_low
+    asymmetry <- (q_high + q_low - 2 * q_mid) / spread
+    asymmetry[!is.finite(asymmetry) | spread <= 0] <- NA_real_
+    return(asymmetry)
   }
 
   event1 <- .event_indicator_mst_pmdn(
@@ -557,11 +560,11 @@ print.mst_functional <- function(x, ...) {
                                                   output_dim) {
   max_elements <- 2e6
   max(1L, min(batch_size, as.integer(floor(
-    max_elements / max(1, num_samples * output_dim)
+    max_elements / max(1, num_samples * output_dim^2)
   ))))
 }
 
-#' Evaluate a scalar MST-PMDN predictive functional
+# Evaluate a scalar MST-PMDN predictive functional
 functional_mst_pmdn <- function(pred,
                                 functional,
                                 num_samples = 4096L,
@@ -638,6 +641,11 @@ functional_mst_pmdn <- function(pred,
   )
   low_resolution <- is_mc & !is.na(expected_tail_draws) &
     expected_tail_draws < min_tail_draws
+  expected_component_draws <- if (is_mc && info$n_mixtures > 1L) {
+    num_samples * as.matrix(torch::as_array(pred$pi$to(device = "cpu")))
+  } else {
+    NULL
+  }
   if (any(low_resolution)) {
     warning(
       sprintf(
@@ -682,7 +690,14 @@ functional_mst_pmdn <- function(pred,
         .min_finite_mst_pmdn(expected_tail_draws)
       } else {
         NA_real_
-      }
+      },
+      expected_component_draws = expected_component_draws,
+      min_expected_component_draws = if (is.null(expected_component_draws)) {
+        NA_real_
+      } else {
+        min(expected_component_draws)
+      },
+      component_draws_shared_across_rows = is_mc && info$n_mixtures > 1L
     ),
     latent_draws = if (is_mc) latent_draws else NULL
   )

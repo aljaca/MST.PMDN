@@ -521,40 +521,57 @@ joint_ale <- ale_mst_pmdn(
   device = device
 )
 
-# Since each image channel was standardized about its training mean, zero is a
-# training-climatology reference. Spatial occlusion below jointly blends the
-# pressure and supplied pressure-gradient channels. For mechanistic mapping,
-# supply rebuild_channels that perturbs physical pressure, recomputes the exact
-# gradient field used in data preparation, and then reapplies this scaling.
-climatology_image <- array(
-  0,
-  dim = c(1L, dim(x_image_test)[2:4])
-)
+# Pressure gradient is a deterministic function of pressure. The committed
+# 32 x 32 files were produced separately and do not contain the upstream
+# operator needed to reconstruct that gradient exactly after perturbation.
+# Mechanistic image maps are therefore run only when the data-preparation
+# workflow supplies all three objects below:
+#
+# * wave_surge_image_sources: test-aligned physical source fields;
+# * wave_surge_reference_sources: a physical climatology/reference field;
+# * wave_surge_rebuild_channels(base_images, reference_images, masks,
+#   case_index): blends physical pressure, recomputes the exact gradient used
+#   during preparation, and returns standardized two-channel model inputs.
+image_interpretation_ready <-
+  exists("wave_surge_image_sources", inherits = TRUE) &&
+  exists("wave_surge_reference_sources", inherits = TRUE) &&
+  exists("wave_surge_rebuild_channels", mode = "function", inherits = TRUE)
 image_cases <- seq_len(min(20L, nrow(x_test)))
-joint_image_contrast <- image_contrast_mst_pmdn(
-  fit$model,
-  inputs = x_test,
-  image_inputs = x_image_test,
-  reference_images = climatology_image,
-  functional = joint_event,
-  cases = image_cases,
-  latent_draws = latent_bank,
-  chunk_size = 20L,
-  device = device
-)
-joint_occlusion <- image_occlusion_mst_pmdn(
-  fit$model,
-  inputs = x_test,
-  image_inputs = x_image_test,
-  reference_images = climatology_image,
-  functional = joint_event,
-  patch_size = c(8L, 8L),
-  stride = c(4L, 4L),
-  cases = image_cases[seq_len(min(5L, length(image_cases)))],
-  latent_draws = latent_bank,
-  chunk_size = 10L,
-  device = device
-)
+joint_image_contrast <- NULL
+joint_occlusion <- NULL
+if (image_interpretation_ready) {
+  joint_image_contrast <- image_contrast_mst_pmdn(
+    fit$model,
+    inputs = x_test,
+    image_inputs = wave_surge_image_sources,
+    reference_images = wave_surge_reference_sources,
+    functional = joint_event,
+    cases = image_cases,
+    rebuild_channels = wave_surge_rebuild_channels,
+    latent_draws = latent_bank,
+    chunk_size = 20L,
+    device = device
+  )
+  joint_occlusion <- image_occlusion_mst_pmdn(
+    fit$model,
+    inputs = x_test,
+    image_inputs = wave_surge_image_sources,
+    reference_images = wave_surge_reference_sources,
+    functional = joint_event,
+    patch_size = c(8L, 8L),
+    stride = c(4L, 4L),
+    cases = image_cases[seq_len(min(5L, length(image_cases)))],
+    rebuild_channels = wave_surge_rebuild_channels,
+    latent_draws = latent_bank,
+    chunk_size = 10L,
+    device = device
+  )
+} else {
+  message(
+    "Skipping image interpretation: exact pressure-channel rebuilding ",
+    "objects are not available."
+  )
+}
 
 # Parameter-channel attribution is intentionally disabled for this mixture.
 # The component helper instead separates prevalence, within-component severity,
@@ -749,11 +766,13 @@ for(i in seq(ncol(y_test))) {
 dev.next()
 plot(joint_ale)
 
-dev.next()
-plot(joint_image_contrast)
+if (image_interpretation_ready) {
+  dev.next()
+  plot(joint_image_contrast)
 
-dev.next()
-plot(joint_occlusion, statistic = "mean_signed_effect")
+  dev.next()
+  plot(joint_occlusion, statistic = "mean_signed_effect")
+}
 
 dev.next()
 plot(surge_tail_sources, row = 1L)

@@ -179,7 +179,25 @@
   pmin(bins, length(breaks) - 1L)
 }
 
-#' One-dimensional accumulated local effects for MST-PMDN functionals
+.nonempty_ale_bins_mst_pmdn <- function(x, breaks) {
+  repeat {
+    bins <- .bin_index_mst_pmdn(x, breaks)
+    counts <- tabulate(bins, nbins = length(breaks) - 1L)
+    empty <- which(counts == 0L)
+    if (!length(empty)) {
+      return(list(breaks = breaks, bins = bins, counts = counts))
+    }
+    k <- empty[1L]
+    remove <- if (k < length(breaks) - 1L) k + 1L else k
+    breaks <- breaks[-remove]
+    if (length(breaks) < 2L) {
+      stop("Unable to construct non-empty empirical ALE bins.",
+           call. = FALSE)
+    }
+  }
+}
+
+# One-dimensional accumulated local effects for MST-PMDN functionals
 ale_mst_pmdn <- function(model,
                          inputs,
                          feature,
@@ -201,14 +219,26 @@ ale_mst_pmdn <- function(model,
   feature_info <- .resolve_feature_mst_pmdn(feature, inputs_matrix)
   .validate_image_alignment_mst_pmdn(image_inputs, nrow(inputs_matrix))
   num_samples <- validate_num_samples(num_samples)
+  if (isTRUE(decompose)) {
+    probe <- .predict_chunks_mst_pmdn(
+      model,
+      inputs_matrix[1L, , drop = FALSE],
+      .subset_rows_mst_pmdn(image_inputs, 1L),
+      chunk_size = 1L,
+      device = device
+    )
+    .require_single_component_mst_pmdn(probe)
+  }
   breaks <- .empirical_breaks_mst_pmdn(
     inputs_matrix[, feature_info$index], n_bins
   )
-  bins <- .bin_index_mst_pmdn(
+  binning <- .nonempty_ale_bins_mst_pmdn(
     inputs_matrix[, feature_info$index], breaks
   )
+  breaks <- binning$breaks
+  bins <- binning$bins
   K <- length(breaks) - 1L
-  counts <- tabulate(bins, nbins = K)
+  counts <- binning$counts
   bin_effect <- numeric(K)
   bin_channel_effects <- vector("list", K)
   active_channels <- character(0)
@@ -370,7 +400,7 @@ ale_mst_pmdn <- function(model,
   slopes
 }
 
-#' Centred individual conditional expectation for MST-PMDN functionals
+# Centred individual conditional expectation for MST-PMDN functionals
 ice_mst_pmdn <- function(model,
                          inputs,
                          feature,
@@ -380,6 +410,7 @@ ice_mst_pmdn <- function(model,
                          reference = NULL,
                          n_curves = 100L,
                          derivative = FALSE,
+                         ale = TRUE,
                          n_bins = 20L,
                          num_samples = 4096L,
                          latent_draws = NULL,
@@ -492,25 +523,42 @@ ice_mst_pmdn <- function(model,
       }
     )
   }))
-  ale <- ale_mst_pmdn(
-    model = model,
-    inputs = inputs_matrix,
-    image_inputs = image_inputs,
-    feature = feature_info$index,
-    functional = functional,
-    n_bins = n_bins,
-    num_samples = num_samples,
-    decompose = FALSE,
-    latent_draws = latent_draws,
-    chunk_size = chunk_size,
-    device = device,
-    response_names = response_names
-  )
+  if (inherits(ale, "mst_pmdn_ale")) {
+    if (!identical(ale$feature$index, feature_info$index) ||
+        !identical(ale$functional, functional)) {
+      stop("A supplied ALE object must match feature and functional.",
+           call. = FALSE)
+    }
+    ale_result <- ale
+    ale_mode <- "supplied"
+  } else if (isTRUE(ale)) {
+    ale_result <- ale_mst_pmdn(
+      model = model,
+      inputs = inputs_matrix,
+      image_inputs = image_inputs,
+      feature = feature_info$index,
+      functional = functional,
+      n_bins = n_bins,
+      num_samples = num_samples,
+      decompose = FALSE,
+      latent_draws = latent_draws,
+      chunk_size = chunk_size,
+      device = device,
+      response_names = response_names
+    )
+    ale_mode <- "computed"
+  } else if (identical(ale, FALSE) || is.null(ale)) {
+    ale_result <- NULL
+    ale_mode <- "none"
+  } else {
+    stop("ale must be TRUE, FALSE, NULL, or an mst_pmdn_ale object.",
+         call. = FALSE)
+  }
 
   out <- list(
     curves = curves,
     plate = plate,
-    ale = ale,
+    ale = ale_result,
     feature = feature_info,
     functional = functional,
     grid = grid,
@@ -518,6 +566,7 @@ ice_mst_pmdn <- function(model,
     cases = case_rows,
     settings = list(
       derivative = isTRUE(derivative),
+      ale = ale_mode,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,

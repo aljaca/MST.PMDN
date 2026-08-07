@@ -25,7 +25,7 @@ mst_functional(
   functionals require one, pairwise functionals require two, and degrees-of-
   freedom diagnostics require none.}
   \item{prob}{One quantile probability, or increasing lower and upper
-  probabilities for tail spread or asymmetry.}
+  probabilities for tail spread or normalized quantile asymmetry.}
   \item{threshold}{One threshold for a marginal exceedance or two thresholds,
   ordered as \code{responses}, for a joint exceedance.}
   \item{direction}{\code{"upper"} or \code{"lower"} for each event.}
@@ -40,9 +40,13 @@ for finite \eqn{\nu \le 2}. The exact \eqn{\nu=\infty} skew-normal or Gaussian
 limit is handled directly.
 
 Quantiles, exceedances, tail spread, and tail asymmetry use stable Monte Carlo
-evaluation. Returned diagnostics include the expected number of draws in the
-relevant tail; a nominal 0.999 quantile with 4096 draws has only 4.096 expected
-upper-tail draws.
+evaluation. Tail asymmetry is the dimensionless generalized Bowley coefficient
+\eqn{(q_U+q_L-2q_{0.5})/(q_U-q_L)} and is undefined when the selected spread is
+zero. Returned diagnostics include the expected number of draws in the
+relevant marginal tail; a nominal 0.999 quantile with 4096 draws has only 4.096
+expected upper-tail draws. Mixture evaluation also retains expected component
+draw counts because marginal tail counts do not diagnose low-weight component
+resolution.
 }
 \value{
 An object of class \code{mst_functional}.

@@ -30,7 +30,7 @@
   out
 }
 
-#' Attribute a mixture exceedance probability to its components
+# Attribute a mixture exceedance probability to its components
 tail_components_mst_pmdn <- function(pred,
                                      response,
                                      threshold,

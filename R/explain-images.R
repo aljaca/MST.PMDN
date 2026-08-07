@@ -221,7 +221,7 @@
   channel_groups
 }
 
-#' Contrast observed and reference image fields for a predictive functional
+# Contrast observed and reference image fields for a predictive functional
 image_contrast_mst_pmdn <- function(model,
                                     inputs,
                                     image_inputs,
@@ -282,6 +282,9 @@ image_contrast_mst_pmdn <- function(model,
     model, case_inputs, original_images,
     chunk_size = chunk_size, device = device
   )
+  if (isTRUE(decompose)) {
+    .require_single_component_mst_pmdn(pred_original)
+  }
   pred_reference <- .predict_chunks_mst_pmdn(
     model, case_inputs, reference_model_images,
     chunk_size = chunk_size, device = device
@@ -398,7 +401,7 @@ image_contrast_mst_pmdn <- function(model,
   mask
 }
 
-#' Spatial occlusion effects for an MST-PMDN predictive functional
+# Spatial occlusion effects for an MST-PMDN predictive functional
 image_occlusion_mst_pmdn <- function(model,
                                      inputs,
                                      image_inputs,
@@ -463,6 +466,9 @@ image_occlusion_mst_pmdn <- function(model,
     model, case_inputs, original_images,
     chunk_size = chunk_size, device = device
   )
+  if (isTRUE(decompose)) {
+    .require_single_component_mst_pmdn(pred_original)
+  }
   latent_draws <- .ensure_latent_bank_mst_pmdn(
     pred_original, functional, latent_draws, num_samples, seed, device
   )

@@ -24,7 +24,8 @@ functional_mst_pmdn(
   \code{num_samples}.}
   \item{seed}{Optional seed used when a bank is created internally.}
   \item{chunk_size}{Optional positive number of prediction rows evaluated at
-  once. \code{NULL} chooses a memory-bounded adaptive value.}
+  once. \code{NULL} chooses a memory-bounded adaptive value that accounts for
+  the quadratic scale-factor gather in the response dimension.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional names for prediction response dimensions.
   Used when \code{functional$responses} is character.}
@@ -47,4 +48,10 @@ Exact moments include skewness, finite degrees of freedom, and between-component
 covariance. Means are undefined for finite \eqn{\nu\leq 1}; covariance-based
 functionals are undefined for finite \eqn{\nu\leq 2}. Exact Gaussian and
 skew-normal components use \eqn{\nu=\infty}.
+
+Tail asymmetry is normalized by its selected interquantile spread and is thus
+dimensionless. Common component uniforms deliberately correlate Monte Carlo
+error across prediction rows. Expected tail draws diagnose only the complete
+marginal functional; expected component draw counts are retained separately for
+mixtures.
 }

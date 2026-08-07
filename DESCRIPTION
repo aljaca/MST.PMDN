@@ -11,7 +11,7 @@ Description: Implements the Multivariate Skew t-Parsimonious Mixture Density Net
 License: GPL (>= 2)
 Encoding: UTF-8
 Depends: R (>= 3.5.0), torch (>= 0.17.0)
-Imports: coro, stats
+Imports: coro, graphics, grDevices, stats, utils
 Suggests: testthat (>= 3.2.0)
 Config/testthat/edition: 3
 LazyData: true
