@@ -357,7 +357,7 @@ image_contrast_mst_pmdn <- function(model,
       device = device
     ),
     diagnostics = diagnostics,
-    latent_draws = latent_draws
+    latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_image_contrast"
   out
@@ -643,7 +643,7 @@ image_occlusion_mst_pmdn <- function(model,
         NA_real_
       }
     ),
-    latent_draws = latent_draws
+    latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_image_occlusion"
   out

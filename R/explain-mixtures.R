@@ -135,7 +135,7 @@ tail_components_mst_pmdn <- function(pred,
         expected_tail_draws
       )
     ),
-    latent_draws = latent_draws
+    latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_tail_components"
   out

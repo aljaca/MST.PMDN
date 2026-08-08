@@ -18,8 +18,11 @@
   identify the row-shared component uniforms used by common random numbers.
 - Tail asymmetry is now the normalized generalized Bowley coefficient rather
   than its response-scale numerator. Gamma quantile transforms are reused for
-  repeated finite-df states, adaptive chunks account for the quadratic
-  response-dimension gather, and latent-bank seeds no longer alter R's RNG.
+  repeated finite-df states, with cache identity including the underlying
+  Gamma uniforms. Public result objects omit the mutable Gamma cache so saved
+  explanations retain reproducibility without cached chi-square arrays.
+  Adaptive chunks account for the quadratic response-dimension gather, and
+  latent-bank seeds no longer alter R's RNG.
 - Exact-Gaussian degrees-of-freedom diagnostics retain `Inf` without an
   undefined-moment warning.
 
@@ -51,9 +54,10 @@
   workflow examples, and CPU/float32/float64/conditional-CUDA regression tests.
 - Plot methods now expose their standard graphical arguments without `...`
   collisions, and irregular occlusion grids render without raster assumptions.
-  The wave-surge image explanation is gated on an exact physical-channel
-  rebuilding callback instead of independently masking pressure and its
-  deterministic gradient.
+  The wave-surge image explanation is gated with an explicit warning on an
+  exact physical-channel rebuilding callback instead of independently masking
+  pressure and its deterministic gradient; the upstream gradient operator is
+  not contained in the repository.
 
 # MST.PMDN 0.2.1
 

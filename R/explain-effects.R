@@ -380,7 +380,7 @@ ale_mst_pmdn <- function(model,
         NA_real_
       }
     ),
-    latent_draws = latent_draws
+    latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_ale"
   out
@@ -577,7 +577,7 @@ ice_mst_pmdn <- function(model,
       original = original_result$diagnostics,
       grid = grid_diagnostics
     ),
-    latent_draws = latent_draws
+    latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_ice"
   out

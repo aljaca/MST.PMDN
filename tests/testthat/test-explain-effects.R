@@ -96,16 +96,18 @@ test_that("tabular perturbations retain case-matched image rows", {
 test_that("centred ICE includes ALE, derivatives, and Plate data", {
   x <- cbind(feature = seq(-1, 1, length.out = 21), other = 0)
   model <- explanation_test_model(slope = 3)
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 1L, seed = 23)
   result <- ice_mst_pmdn(
     model,
     x,
     feature = "feature",
-    functional = mst_functional("mean", 1L),
+    functional = mst_functional("quantile", 1L, prob = 0.8),
     grid = seq(-1, 1, length.out = 7),
     reference = 0,
     n_curves = 5L,
     derivative = TRUE,
-    n_bins = 5L
+    n_bins = 5L,
+    latent_draws = bank
   )
   expect_equal(
     result$curves$slope,
@@ -115,6 +117,8 @@ test_that("centred ICE includes ALE, derivatives, and Plate data", {
   expect_equal(result$plate$local_slope, rep(3, nrow(result$plate)),
                tolerance = 1e-6)
   expect_s3_class(result$ale, "mst_pmdn_ale")
+  expect_false(".cache" %in% names(result$latent_draws))
+  expect_false(".cache" %in% names(result$ale$latent_draws))
 })
 
 test_that("ALE merges empirically empty bins rather than accumulating NaN", {
@@ -154,6 +158,7 @@ test_that("finite skewed mixture ALE reaches the complete sampling path", {
   ))
   expect_true(all(is.finite(result$data$ale)))
   expect_equal(sum(result$data$n), nrow(x))
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("multi-channel ALE decomposition integrates Shapley bin effects", {
@@ -179,6 +184,7 @@ test_that("multi-channel ALE decomposition integrates Shapley bin effects", {
   expect_true(any(abs(result$data$ale_scale) > 0))
   expect_true(any(abs(result$data$ale_skewness) > 0))
   expect_true(any(abs(result$data$ale_df) > 0))
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("ALE decomposition rejects mixtures before bin evaluation", {

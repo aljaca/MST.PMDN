@@ -19,6 +19,7 @@ test_that("mixture exceedance accounting separates weight and severity", {
   expect_equal(unique(result$data$total_probability), 0.2, tolerance = 1e-6)
   expect_equal(result$data$tail_share, c(0, 1), tolerance = 1e-6)
   expect_equal(result$data$rank, c(2L, 1L))
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("tail-component rows retain one-based component identities", {

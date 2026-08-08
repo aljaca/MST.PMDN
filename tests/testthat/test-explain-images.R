@@ -5,15 +5,18 @@ test_that("whole-image contrasts use case-specific references", {
   image[2, 1, , ] <- 5
   reference <- array(1, c(1, 1, 2, 2))
   model <- explanation_test_model(slope = 0, image_channel = 1L)
+  bank <- latent_draws_mst_pmdn(128L, output_dim = 1L, seed = 73)
   result <- image_contrast_mst_pmdn(
     model,
     x,
     image,
     reference,
-    mst_functional("mean", 1L),
-    chunk_size = 1L
+    mst_functional("quantile", 1L, prob = 0.8),
+    chunk_size = 1L,
+    latent_draws = bank
   )
   expect_equal(result$data$contrast, c(1, 4), tolerance = 1e-6)
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("reference images are coerced to the input tensor representation", {
@@ -149,6 +152,7 @@ test_that("finite skewed mixture occlusion reaches complete functional sampling"
   ))
   expect_true(all(is.finite(result$data$effect)))
   expect_equal(nrow(result$data), 2L)
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("multi-channel image decomposition closes within each patch", {
@@ -177,6 +181,7 @@ test_that("multi-channel image decomposition closes within each patch", {
   for (channel in result$active_channels) {
     expect_true(paste0("channel_", channel) %in% names(result$data))
   }
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("image decomposition rejects mixtures before patch evaluation", {

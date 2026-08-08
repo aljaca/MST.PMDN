@@ -36,14 +36,43 @@ test_that("finite-df Gamma transforms reuse repeated selected df states", {
   )
   bank <- latent_draws_mst_pmdn(64L, output_dim = 1L, seed = 100)
   functional <- mst_functional("quantile", 1L, prob = 0.8)
-  suppressWarnings(functional_mst_pmdn(
+  first <- suppressWarnings(functional_mst_pmdn(
     pred, functional, latent_draws = bank
   ))
-  suppressWarnings(functional_mst_pmdn(
+  second <- suppressWarnings(functional_mst_pmdn(
     pred, functional, latent_draws = bank
   ))
   expect_equal(bank$.cache$gamma_scale_misses, 1L)
   expect_equal(bank$.cache$gamma_scale_hits, 1L)
+  expect_false(".cache" %in% names(first$latent_draws))
+  expect_false(".cache" %in% names(second$latent_draws))
+})
+
+test_that("finite-df Gamma caching follows mutations to gamma_u", {
+  pred <- make_mdn_output(
+    pi = matrix(1, 1, 1),
+    mu = array(0, c(1, 1, 1)),
+    scale_chol = array(1, c(1, 1, 1, 1)),
+    nu = matrix(7, 1, 1),
+    alpha = array(0.3, c(1, 1, 1))
+  )
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 1L, seed = 101)
+  functional <- mst_functional("quantile", 1L, prob = 0.8)
+  suppressWarnings(functional_mst_pmdn(
+    pred, functional, latent_draws = bank
+  ))
+  bank$gamma_u <- 1 - bank$gamma_u
+  changed <- suppressWarnings(functional_mst_pmdn(
+    pred, functional, latent_draws = bank
+  ))
+  expect_equal(bank$.cache$gamma_scale_misses, 2L)
+
+  uncached <- bank
+  uncached$.cache <- new.env(parent = emptyenv())
+  expected <- suppressWarnings(functional_mst_pmdn(
+    pred, functional, latent_draws = uncached
+  ))
+  expect_equal(changed$data$value, expected$data$value, tolerance = 0)
 })
 
 test_that("latent-bank sampling uses R torch one-based component indices", {

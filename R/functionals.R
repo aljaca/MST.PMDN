@@ -699,7 +699,11 @@ functional_mst_pmdn <- function(pred,
       },
       component_draws_shared_across_rows = is_mc && info$n_mixtures > 1L
     ),
-    latent_draws = if (is_mc) latent_draws else NULL
+    latent_draws = if (is_mc) {
+      .latent_draws_for_output_mst_pmdn(latent_draws)
+    } else {
+      NULL
+    }
   )
   class(out) <- "mst_pmdn_functional"
   out

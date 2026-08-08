@@ -567,9 +567,14 @@ if (image_interpretation_ready) {
     device = device
   )
 } else {
-  message(
-    "Skipping image interpretation: exact pressure-channel rebuilding ",
-    "objects are not available."
+  warning(
+    paste0(
+      "Image interpretation was not run: the repository does not contain ",
+      "the physical pressure sources, reference sources, and exact gradient ",
+      "operator required by wave_surge_rebuild_channels."
+    ),
+    immediate. = TRUE,
+    call. = FALSE
   )
 }
 

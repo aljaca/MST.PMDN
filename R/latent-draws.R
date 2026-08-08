@@ -127,6 +127,16 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   latent_draws
 }
 
+.latent_draws_for_output_mst_pmdn <- function(latent_draws) {
+  if (is.null(latent_draws)) return(NULL)
+  out <- latent_draws
+  # The mutable qgamma cache is an evaluation detail. Keeping it in a public
+  # result can add tens of megabytes to saveRDS() output and is unnecessary for
+  # exact reproduction because the parameter-independent tensors are retained.
+  out$.cache <- NULL
+  out
+}
+
 .select_components_mst_pmdn <- function(pi, component_u) {
   B <- pi$size(1)
   S <- component_u$size(1)
@@ -155,6 +165,11 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
 
   nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
   nu_key <- as.numeric(torch::as_array(nu$to(device = "cpu")))
+  gamma_key <- as.numeric(torch::as_array(gamma_u$to(device = "cpu")))
+  gamma_key <- pmin(
+    pmax(gamma_key, .Machine$double.xmin),
+    1 - .Machine$double.eps
+  )
   entries <- if (is.environment(cache) &&
                  is.list(cache$gamma_scale_entries)) {
     cache$gamma_scale_entries
@@ -162,7 +177,9 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     list()
   }
   hit <- which(vapply(entries, function(entry) {
-    identical(entry$dim, c(B, S)) && identical(entry$nu, nu_key)
+    identical(entry$dim, c(B, S)) &&
+      identical(entry$nu, nu_key) &&
+      identical(entry$gamma_u, gamma_key)
   }, logical(1)))[1L]
 
   if (length(hit) && !is.na(hit)) {
@@ -173,33 +190,27 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
       cache$gamma_scale_hits + 1L
     }
   } else {
-    if (is.environment(cache) &&
-        is.numeric(cache$gamma_uniform) &&
-        length(cache$gamma_uniform) == S) {
-      gamma_uniform <- cache$gamma_uniform
-    } else {
-      gamma_uniform <- as.numeric(torch::as_array(
-        gamma_u$to(device = "cpu")
-      ))
-      gamma_uniform <- pmin(
-        pmax(gamma_uniform, .Machine$double.xmin),
-        1 - .Machine$double.eps
-      )
-      if (is.environment(cache)) cache$gamma_uniform <- gamma_uniform
-    }
-    u_r <- rep(gamma_uniform, each = B)
+    u_r <- rep(gamma_key, each = B)
     nu_r <- as.numeric(torch::as_array(nu_safe$to(device = "cpu")))
     chi2_r <- stats::qgamma(u_r, shape = nu_r / 2, scale = 2)
     if (is.environment(cache)) {
       entries[[length(entries) + 1L]] <- list(
-        dim = c(B, S), nu = nu_key, chi2 = chi2_r
+        dim = c(B, S),
+        nu = nu_key,
+        gamma_u = gamma_key,
+        chi2 = chi2_r
       )
       # Shapley evaluation repeatedly visits only a few df states. Bound both
-      # entry count and total elements so caching cannot defeat the functional
-      # evaluator's memory budget during a long ALE calculation.
+      # entry count and all retained numeric elements so caching cannot defeat
+      # the functional evaluator's memory budget during a long ALE calculation.
       while (length(entries) > 8L ||
              (length(entries) > 1L && sum(vapply(
-               entries, function(entry) length(entry$chi2), integer(1)
+               entries,
+               function(entry) {
+                 length(entry$nu) + length(entry$gamma_u) +
+                   length(entry$chi2)
+               },
+               integer(1)
              )) > 2e6)) {
         entries <- entries[-1L]
       }
@@ -266,8 +277,7 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   samples <- mu_s + W * torch_matmul(chol_s, X$unsqueeze(4L))$squeeze(4L)
   list(
     samples = samples$permute(c(2L, 1L, 3L)),
-    components = idx$permute(c(2L, 1L)),
-    latent_draws = latent_draws
+    components = idx$permute(c(2L, 1L))
   )
 }
 

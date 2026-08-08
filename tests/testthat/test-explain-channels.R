@@ -82,6 +82,7 @@ test_that("Shapley channel contributions close under interacting changes", {
     c("location", "scale", "skewness", "df")
   )
   expect_equal(result$data$sum_to_total_residual, 0, tolerance = 1e-10)
+  expect_false(".cache" %in% names(result$latent_draws))
 })
 
 test_that("structurally inactive skewness and df channels disappear", {

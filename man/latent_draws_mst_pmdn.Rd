@@ -33,6 +33,10 @@ distribution and makes case chunking reproducible. Consequently, shared
 component-selection error does not average away along an ALE curve. Functional
 tail-draw diagnostics describe the marginal event or quantile; mixture
 diagnostics separately report expected component draw counts.
+Finite-df evaluations may attach a bounded, mutable Gamma-quantile cache to the
+bank supplied by the caller. Public functional and explanation result objects
+retain the latent tensors needed for exact reproduction but omit this cache, so
+serializing a result does not retain cached chi-square arrays.
 }
 \value{
 An object of class \code{mst_pmdn_latent_draws} containing torch tensors and
