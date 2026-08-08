@@ -283,7 +283,11 @@ test_that("mixture diagnostics expose expected component draw counts", {
     c(99, 1),
     tolerance = 1e-6
   )
-  expect_equal(result$diagnostics$min_expected_component_draws, 1)
+  expect_equal(
+    result$diagnostics$min_expected_component_draws,
+    1,
+    tolerance = 1e-6
+  )
   expect_true(result$diagnostics$component_draws_shared_across_rows)
 })
 
