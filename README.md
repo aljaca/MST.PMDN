@@ -275,7 +275,7 @@ samples <- sample_mst_pmdn(
   num_samples = 1000,
   device = device
 )
-print(head(samples))
+print(str(samples))
 
 # Evaluate CDF and quantiles
 tt <- cdf_marginal_mst_pmdn(pred, y, draws = samples)
@@ -322,9 +322,6 @@ wave_tail_sources <- tail_components_mst_pmdn(
 )
 print(head(wave_tail_sources$data))
 ```
-
-Output from a more complete analysis of the same wave–surge setting is [shown here](examples/wave-surge-dailymax.pdf),
-[here](examples/wave-surge-dailymax.VVIFN2.testing.pdf), and [here](examples/extreme-cases_wave-surge-dailymax.VVIFN2.testing.pdf).
 
 ## Function Summaries
 
