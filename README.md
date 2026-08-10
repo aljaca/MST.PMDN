@@ -49,10 +49,21 @@ device <- ifelse(cuda_is_available(), "cuda", "cpu")
 set.seed(1)
 torch_manual_seed(1)
 
-# Significant wave height, storm surge, and covariate data from Roberts Bank
-x <- wave_surge$x              # x and x_image should be appropriateley scaled, e.g.,
-x_image <- wave_surge$x_image  # standardized to zero mean and unit standard deviation
+# Daily maximum significant wave height, storm surge, and covariates
+# from Roberts Bank. Rows of date, x, x_image, and y are aligned. The lagged
+# responses in x, all image channels, and y are already model-ready as
+# documented in ?wave_surge.
+date <- as.Date(wave_surge$date)
+x <- wave_surge$x
+x_image <- wave_surge$x_image  # 896 × 3 × 32 × 32: psl, uas, vas
 y <- wave_surge$y
+
+# The object also retains the image and response normalization statistics,
+# the wave softplus scale, and both wave transformation functions.
+x_image_mean <- wave_surge$x_image_mean
+x_image_sd <- wave_surge$x_image_sd
+y_mean <- wave_surge$y_mean
+y_sd <- wave_surge$y_sd
 
 # The TabularModule takes an input vector of length input_dim, runs it
 # through two dense layers (input_dim→32 and 32→16) each with
@@ -140,7 +151,7 @@ tabular_mod <- tabular_module(
   dropout_rate = 0.5
 )
 
-# The ImageModule accepts a 2×32×32 image, applies a 3×3 conv (2→16)
+# The ImageModule accepts a 3×32×32 image, applies a 3×3 conv (3→16)
 # with BN, ReLU  and 2×2 max-pool (→16×16), repeats with a 16→32 conv
 # + BN, ReLU and max-pool (→8×8), flattens the 32×8×8 tensor to 2048
 # units, and then projects it to 32 features via a linear layer, BN,
@@ -312,7 +323,7 @@ wave_tail_sources <- tail_components_mst_pmdn(
 print(head(wave_tail_sources$data))
 ```
 
-Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf),
+Output from a more complete analysis of the same wave–surge setting is [shown here](examples/wave-surge-dailymax.pdf),
 [here](examples/wave-surge-dailymax.VVIFN2.testing.pdf), and [here](examples/extreme-cases_wave-surge-dailymax.VVIFN2.testing.pdf).
 
 ## Function Summaries
