@@ -28,11 +28,9 @@
 
 \method{plot}{mst_pmdn_ice}(
   x,
-  type = c("ice", "plate"),
   xlab = NULL,
   ylab = NULL,
   main = NULL,
-  pch = 19,
   ...
 )
 
@@ -86,7 +84,7 @@
   summary.}
   \item{group}{Named image channel group.}
   \item{statistic}{Numeric occlusion output column to map.}
-  \item{xlab,ylab,main,col,zlim,pch}{Standard graphical arguments. Scalar
+  \item{xlab,ylab,main,col,zlim}{Standard graphical arguments. Scalar
   labels supplied to the three-panel component plot are recycled.}
   \item{useRaster}{Logical passed to \code{\link[graphics]{image}}. It defaults
   to \code{FALSE} so patch-centre grids need not be regular.}

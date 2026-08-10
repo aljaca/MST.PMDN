@@ -76,31 +76,10 @@ plot.mst_pmdn_ale <- function(x,
 }
 
 plot.mst_pmdn_ice <- function(x,
-                              type = c("ice", "plate"),
                               xlab = NULL,
                               ylab = NULL,
                               main = NULL,
-                              pch = 19,
                               ...) {
-  type <- match.arg(type)
-  if (type == "plate") {
-    if (all(is.na(x$plate$local_slope))) {
-      stop("Plate-style slopes require derivative = TRUE in ice_mst_pmdn().",
-           call. = FALSE)
-    }
-    graphics::plot(
-      x$plate$baseline_contrast,
-      x$plate$local_slope,
-      pch = pch,
-      xlab = if (is.null(xlab)) "Baseline contrast" else xlab,
-      ylab = if (is.null(ylab)) "Local slope" else ylab,
-      main = main,
-      ...
-    )
-    graphics::abline(h = 0, v = 0, lty = 2, col = "grey70")
-    return(invisible(x))
-  }
-
   y_range <- range(x$curves$centred, finite = TRUE)
   graphics::plot(
     range(x$grid),

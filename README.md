@@ -455,7 +455,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Functions: `ale_mst_pmdn(...)` and `ice_mst_pmdn(...)`
 
 *   **Purpose:** Explain how a tabular covariate changes a selected distribution functional.
-*   **Method:** One-dimensional ALE uses non-empty empirical bins and locally supported lower-to-upper contrasts. Effects are displayed at bin midpoints by subtracting half the current bin effect, which assumes within-bin linearity rather than using the boundary-valued Apley-Zhu convention. Centred ICE shows case-level heterogeneity, an optional or precomputed ALE overlay, optional local slopes, and Plate-style baseline-contrast/slope data. A case's image remains aligned and fixed during tabular perturbations.
+*   **Method:** One-dimensional ALE uses non-empty empirical bins and locally supported lower-to-upper contrasts. Effects are displayed at bin midpoints by subtracting half the current bin effect, which assumes within-bin linearity rather than using the boundary-valued Apley-Zhu convention. Centred ICE shows case-level heterogeneity with an optional or precomputed ALE overlay. A case's image remains aligned and fixed during tabular perturbations.
 *   **Scope:** A named feature is accepted when input columns are named; otherwise use R's 1-based column indices. Deterministically linked predictors, such as sine/cosine seasonal harmonics, should be perturbed as a scientifically coherent group outside this one-dimensional API.
 
 #### Functions: `image_contrast_mst_pmdn(...)` and `image_occlusion_mst_pmdn(...)`
