@@ -28,8 +28,7 @@
 
 ## Covariate and image effects
 
-- Added one-dimensional accumulated local effects, centred ICE curves, local
-  finite-difference slopes, and Plate-style baseline-contrast/slope data.
+- Added one-dimensional accumulated local effects and centred ICE curves.
   Case-matched image rows remain fixed during tabular perturbations.
 - ALE now merges empirically empty bins, rejects mixture decomposition before
   bin evaluation, and documents its within-bin linear midpoint convention. ICE

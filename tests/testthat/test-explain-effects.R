@@ -93,7 +93,7 @@ test_that("tabular perturbations retain case-matched image rows", {
   expect_equal(result$data$ale, expected, tolerance = 1e-6)
 })
 
-test_that("centred ICE includes ALE, derivatives, and Plate data", {
+test_that("centred ICE includes the known effect and an ALE overlay", {
   x <- cbind(feature = seq(-1, 1, length.out = 21), other = 0)
   model <- explanation_test_model(slope = 3)
   bank <- latent_draws_mst_pmdn(128L, output_dim = 1L, seed = 23)
@@ -105,17 +105,18 @@ test_that("centred ICE includes ALE, derivatives, and Plate data", {
     grid = seq(-1, 1, length.out = 7),
     reference = 0,
     n_curves = 5L,
-    derivative = TRUE,
     n_bins = 5L,
     latent_draws = bank
   )
   expect_equal(
-    result$curves$slope,
-    rep(3, nrow(result$curves)),
+    result$curves$centred,
+    3 * result$curves$feature_value,
     tolerance = 1e-6
   )
-  expect_equal(result$plate$local_slope, rep(3, nrow(result$plate)),
-               tolerance = 1e-6)
+  expect_identical(
+    names(result$curves),
+    c("case", "feature_value", "value", "centred")
+  )
   expect_s3_class(result$ale, "mst_pmdn_ale")
   expect_false(".cache" %in% names(result$latent_draws))
   expect_false(".cache" %in% names(result$ale$latent_draws))

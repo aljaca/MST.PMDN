@@ -46,23 +46,13 @@ test_that("all explanation plot methods smoke-test with graphical overrides", {
     functional = mst_functional("mean", 1L),
     grid = c(-1, 0, 1),
     n_curves = 3L,
-    derivative = TRUE,
     ale = FALSE
   )
   expect_invisible(plot(
     ice,
-    type = "ice",
     main = "ICE",
     xlab = "Predictor",
     ylab = "Centred effect"
-  ))
-  expect_invisible(plot(
-    ice,
-    type = "plate",
-    main = "Plate",
-    xlab = "Baseline",
-    ylab = "Slope",
-    pch = 1
   ))
 
   pred_to <- pred

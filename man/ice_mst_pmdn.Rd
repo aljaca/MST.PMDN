@@ -11,7 +11,6 @@ ice_mst_pmdn(
   grid = NULL,
   reference = NULL,
   n_curves = 100L,
-  derivative = FALSE,
   ale = TRUE,
   n_bins = 20L,
   num_samples = 4096L,
@@ -31,19 +30,17 @@ ice_mst_pmdn(
   \item{reference}{Feature value at which every curve is centred. The default
   is the empirical median.}
   \item{n_curves}{Maximum number of evenly spaced input cases.}
-  \item{derivative}{If \code{TRUE}, calculate local finite-difference slopes.}
   \item{ale}{\code{TRUE} to compute an ALE overlay using all input rows,
   \code{FALSE} or \code{NULL} to omit it, or a matching precomputed
   \code{mst_pmdn_ale} object.}
   \item{n_bins}{Number of bins for the accompanying ALE overlay.}
 }
 \description{
-Calculates complete centred ICE curves, an optional ALE overlay, local slopes,
-and Plate-style baseline-contrast and local-slope data.
+Calculates complete centred ICE curves and an optional ALE overlay.
 }
 \value{
-An object of class \code{mst_pmdn_ice} with plain \code{curves} and
-\code{plate} data frames plus an optional \code{mst_pmdn_ale} object.
+An object of class \code{mst_pmdn_ice} with a plain \code{curves} data frame
+and an optional \code{mst_pmdn_ale} object.
 }
 \details{
 The same latent bank is used at every grid point. Fixed-reference ICE is

@@ -386,20 +386,6 @@ ale_mst_pmdn <- function(model,
   out
 }
 
-.ice_slopes_mst_pmdn <- function(grid, values) {
-  n <- length(grid)
-  if (n < 2L) return(rep(NA_real_, n))
-  slopes <- numeric(n)
-  slopes[1L] <- (values[2L] - values[1L]) / (grid[2L] - grid[1L])
-  slopes[n] <- (values[n] - values[n - 1L]) / (grid[n] - grid[n - 1L])
-  if (n > 2L) {
-    index <- 2:(n - 1L)
-    slopes[index] <- (values[index + 1L] - values[index - 1L]) /
-      (grid[index + 1L] - grid[index - 1L])
-  }
-  slopes
-}
-
 # Centred individual conditional expectation for MST-PMDN functionals
 ice_mst_pmdn <- function(model,
                          inputs,
@@ -409,7 +395,6 @@ ice_mst_pmdn <- function(model,
                          grid = NULL,
                          reference = NULL,
                          n_curves = 100L,
-                         derivative = FALSE,
                          ale = TRUE,
                          n_bins = 20L,
                          num_samples = 4096L,
@@ -468,14 +453,6 @@ ice_mst_pmdn <- function(model,
     chunk_size, device, response_names
   )
   reference_values <- reference_result$data$value
-  pred_original <- .predict_chunks_mst_pmdn(
-    model, selected_inputs, selected_images,
-    chunk_size = chunk_size, device = device
-  )
-  original_result <- .functional_values_quiet_mst_pmdn(
-    pred_original, functional, num_samples, latent_draws,
-    chunk_size, device, response_names
-  )
 
   values <- matrix(NA_real_, nrow = length(case_rows), ncol = length(grid))
   grid_diagnostics <- vector("list", length(grid))
@@ -494,33 +471,13 @@ ice_mst_pmdn <- function(model,
     grid_diagnostics[[g]] <- result$diagnostics
   }
   centred <- sweep(values, 1L, reference_values, "-")
-  slopes <- matrix(NA_real_, nrow = nrow(centred), ncol = ncol(centred))
-  if (isTRUE(derivative)) {
-    for (i in seq_len(nrow(centred))) {
-      slopes[i, ] <- .ice_slopes_mst_pmdn(grid, centred[i, ])
-    }
-  }
 
   curves <- do.call(rbind, lapply(seq_along(case_rows), function(i) {
     data.frame(
       case = case_rows[i],
       feature_value = grid,
       value = values[i, ],
-      centred = centred[i, ],
-      slope = slopes[i, ]
-    )
-  }))
-  plate <- do.call(rbind, lapply(seq_along(case_rows), function(i) {
-    x_i <- inputs_matrix[case_rows[i], feature_info$index]
-    data.frame(
-      case = case_rows[i],
-      feature_value = x_i,
-      baseline_contrast = original_result$data$value[i] - reference_values[i],
-      local_slope = if (isTRUE(derivative)) {
-        stats::approx(grid, slopes[i, ], xout = x_i, rule = 2)$y
-      } else {
-        NA_real_
-      }
+      centred = centred[i, ]
     )
   }))
   if (inherits(ale, "mst_pmdn_ale")) {
@@ -557,7 +514,6 @@ ice_mst_pmdn <- function(model,
 
   out <- list(
     curves = curves,
-    plate = plate,
     ale = ale_result,
     feature = feature_info,
     functional = functional,
@@ -565,7 +521,6 @@ ice_mst_pmdn <- function(model,
     reference = reference,
     cases = case_rows,
     settings = list(
-      derivative = isTRUE(derivative),
       ale = ale_mode,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
@@ -574,7 +529,6 @@ ice_mst_pmdn <- function(model,
     ),
     diagnostics = list(
       reference = reference_result$diagnostics,
-      original = original_result$diagnostics,
       grid = grid_diagnostics
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
