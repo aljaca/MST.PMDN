@@ -1,3 +1,64 @@
+# MST.PMDN 0.3.0
+
+## Distribution-functional interpretation
+
+- Added validated scalar functional specifications and evaluators for exact
+  means, variances, standard deviations, covariances, and correlations, plus
+  Monte Carlo quantiles, marginal and joint exceedances, tail spread, and tail
+  asymmetry. Exact mixture covariance includes between-component variation and
+  undefined low-degrees-of-freedom moments are explicit.
+- Added parameter-independent latent banks with common random numbers for
+  component selection, the skew-normal construction, and Gamma-quantile
+  Student-t scaling. Fixed banks preserve dtype and make chunked and unchunked
+  functional evaluation identical.
+- Tail summaries now report expected tail-draw counts and warn when Monte Carlo
+  resolution is inadequate. Counts use untransformed probabilities, and ALE
+  diagnostics summarize the states actually evaluated rather than a nominal
+  probability. Mixture diagnostics also report expected draws by component and
+  identify the row-shared component uniforms used by common random numbers.
+- Tail asymmetry is now the normalized generalized Bowley coefficient rather
+  than its response-scale numerator. Gamma quantile transforms are reused for
+  repeated finite-df states, with cache identity including the underlying
+  Gamma uniforms. Public result objects omit the mutable Gamma cache so saved
+  explanations retain reproducibility without cached chi-square arrays.
+  Adaptive chunks account for the quadratic response-dimension gather, and
+  latent-bank seeds no longer alter R's RNG.
+- Exact-Gaussian degrees-of-freedom diagnostics retain `Inf` without an
+  undefined-moment warning.
+
+## Covariate and image effects
+
+- Added one-dimensional accumulated local effects, centred ICE curves, local
+  finite-difference slopes, and Plate-style baseline-contrast/slope data.
+  Case-matched image rows remain fixed during tabular perturbations.
+- ALE now merges empirically empty bins, rejects mixture decomposition before
+  bin evaluation, and documents its within-bin linear midpoint convention. ICE
+  can omit its full-data ALE overlay or reuse a precomputed one.
+- Added whole-image functional contrasts and tapered spatial occlusion maps,
+  with signed, absolute, and sign-consistency population summaries.
+- Added a `rebuild_channels` callback contract for perturbing fundamental
+  physical fields and rebuilding deterministically linked image channels before
+  model evaluation. Reference images are aligned to the source representation,
+  dtype, and device, and rebuilt states are checked for mutual compatibility.
+
+## Distributional attribution
+
+- Added exact Shapley decomposition of one-component functional contrasts among
+  complete location, scale, skewness, and degrees-of-freedom blocks. Inactive
+  blocks disappear and every result reports its sum-to-total residual.
+- Added mixture-safe exceedance accounting through component weight,
+  within-component event probability, weighted contribution, tail share, and
+  contribution rank. Full parameter-channel attribution remains disabled for
+  mixtures.
+- Added base-R S3 plotting methods, manual pages, wave-surge and synthetic
+  workflow examples, and CPU/float32/float64/conditional-CUDA regression tests.
+- Plot methods now expose their standard graphical arguments without `...`
+  collisions, and irregular occlusion grids render without raster assumptions.
+  The wave-surge image explanation is gated with an explicit warning on an
+  exact physical-channel rebuilding callback instead of independently masking
+  pressure and its deterministic gradient; the upstream gradient operator is
+  not contained in the repository.
+
 # MST.PMDN 0.2.1
 
 ## Bug fixes

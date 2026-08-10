@@ -481,6 +481,204 @@ print(cor(y_test))
 print(cor(samples))
 
 ##
+# Functional-first interpretation of the fitted two-component mixture
+
+joint_threshold <- apply(y, 2, quantile, probs = 0.95)
+joint_event <- mst_functional(
+  "joint_exceedance",
+  responses = c(1L, 2L),
+  threshold = joint_threshold,
+  direction = c("upper", "upper")
+)
+latent_bank <- latent_draws_mst_pmdn(
+  num_samples = 4096L,
+  output_dim = ncol(y_test),
+  dtype = pred$mu$dtype,
+  device = device,
+  seed = 20260806
+)
+
+joint_probability <- functional_mst_pmdn(
+  pred,
+  joint_event,
+  latent_draws = latent_bank,
+  chunk_size = 32L,
+  device = device
+)
+print(head(joint_probability$data))
+
+# The last tabular column is lag-1 surge. Each matching pressure image and all
+# other tabular covariates remain fixed during locally supported perturbations.
+joint_ale <- ale_mst_pmdn(
+  fit$model,
+  inputs = x_test,
+  image_inputs = x_image_test,
+  feature = ncol(x_test),
+  functional = joint_event,
+  n_bins = 15L,
+  latent_draws = latent_bank,
+  chunk_size = 32L,
+  device = device
+)
+
+# Pressure gradient is a deterministic function of pressure. The committed
+# 32 x 32 files were produced separately and do not contain the upstream
+# operator needed to reconstruct that gradient exactly after perturbation.
+# Mechanistic image maps are therefore run only when the data-preparation
+# workflow supplies all three objects below:
+#
+# * wave_surge_image_sources: test-aligned physical source fields;
+# * wave_surge_reference_sources: a physical climatology/reference field;
+# * wave_surge_rebuild_channels(base_images, reference_images, masks,
+#   case_index): blends physical pressure, recomputes the exact gradient used
+#   during preparation, and returns standardized two-channel model inputs.
+image_interpretation_ready <-
+  exists("wave_surge_image_sources", inherits = TRUE) &&
+  exists("wave_surge_reference_sources", inherits = TRUE) &&
+  exists("wave_surge_rebuild_channels", mode = "function", inherits = TRUE)
+image_cases <- seq_len(min(20L, nrow(x_test)))
+joint_image_contrast <- NULL
+joint_occlusion <- NULL
+if (image_interpretation_ready) {
+  joint_image_contrast <- image_contrast_mst_pmdn(
+    fit$model,
+    inputs = x_test,
+    image_inputs = wave_surge_image_sources,
+    reference_images = wave_surge_reference_sources,
+    functional = joint_event,
+    cases = image_cases,
+    rebuild_channels = wave_surge_rebuild_channels,
+    latent_draws = latent_bank,
+    chunk_size = 20L,
+    device = device
+  )
+  joint_occlusion <- image_occlusion_mst_pmdn(
+    fit$model,
+    inputs = x_test,
+    image_inputs = wave_surge_image_sources,
+    reference_images = wave_surge_reference_sources,
+    functional = joint_event,
+    patch_size = c(8L, 8L),
+    stride = c(4L, 4L),
+    cases = image_cases[seq_len(min(5L, length(image_cases)))],
+    rebuild_channels = wave_surge_rebuild_channels,
+    latent_draws = latent_bank,
+    chunk_size = 10L,
+    device = device
+  )
+} else {
+  warning(
+    paste0(
+      "Image interpretation was not run: the repository does not contain ",
+      "the physical pressure sources, reference sources, and exact gradient ",
+      "operator required by wave_surge_rebuild_channels."
+    ),
+    immediate. = TRUE,
+    call. = FALSE
+  )
+}
+
+# Parameter-channel attribution is intentionally disabled for this mixture.
+# The component helper instead separates prevalence, within-component severity,
+# and weighted contribution to the complete exceedance probability.
+surge_tail_sources <- tail_components_mst_pmdn(
+  pred,
+  response = 2L,
+  threshold = joint_threshold[2L],
+  latent_draws = latent_bank,
+  chunk_size = 32L,
+  device = device
+)
+print(head(surge_tail_sources$data))
+
+# A separate one-component skew-t fit makes the parameter bridge identifiable.
+# This block is optional because it repeats the complete network training.
+run_single_component_interpretation <- FALSE
+if (run_single_component_interpretation) {
+  tabular_one <- tabular_module(
+    input_dim = ncol(x),
+    hidden_dims = 64,
+    residual_blocks = 3,
+    residual_width = 64,
+    output_dim = 16,
+    dropout_rate = 0.2
+  )
+  image_one <- image_module(
+    in_channels = dim(x_image)[2],
+    img_size = dim(x_image)[3],
+    conv_channels = c(16, 32, 64, 128),
+    kernel_size = 3,
+    pool_kernel = 2,
+    output_dim = 32,
+    dropout_rate = 0.2
+  )
+  fusion_one <- fusion_module(
+    tabular_dim = tabular_one$output_dim,
+    image_dim = image_one$output_dim,
+    fusion_dim = 32,
+    output_dim = 32,
+    head_hidden = 32,
+    dropout_rate = 0.1
+  )
+  fit_one <- train_mst_pmdn(
+    inputs = x,
+    outputs = y,
+    hidden_dim = integer(0),
+    n_mixtures = 1L,
+    constraint = "VVVVV",
+    constant_attr = "",
+    activation = nn_relu,
+    range_nu = c(3, 50),
+    max_alpha = 5,
+    min_vol_shape = 0.01,
+    jitter = 1e-4,
+    lr = 1e-4,
+    max_norm = 1,
+    epochs = 200,
+    batch_size = 16,
+    drop_hidden = drop_hidden,
+    wd_image = wd_image,
+    wd_tabular = wd_tabular,
+    checkpoint_interval = 10,
+    checkpoint_path = "wave-surge-one-skewt-checkpoint.pt",
+    resume_from_checkpoint = FALSE,
+    early_stopping_patience = 100,
+    validation_split = 0,
+    custom_split = custom_split,
+    scheduler_step = 50,
+    scheduler_gamma = 0.5,
+    image_inputs = x_image,
+    image_module = image_one,
+    tabular_module = tabular_one,
+    fusion_module = fusion_one,
+    device = device
+  )
+  pred_one <- predict_mst_pmdn(
+    fit_one$model, x_test, x_image_test, device = device
+  )
+  latent_bank_one <- latent_draws_mst_pmdn(
+    num_samples = 4096L,
+    output_dim = ncol(y_test),
+    dtype = pred_one$mu$dtype,
+    device = device,
+    seed = 20260806
+  )
+  joint_ale_one <- ale_mst_pmdn(
+    fit_one$model,
+    inputs = x_test,
+    image_inputs = x_image_test,
+    feature = ncol(x_test),
+    functional = joint_event,
+    n_bins = 15L,
+    decompose = TRUE,
+    latent_draws = latent_bank_one,
+    chunk_size = 16L,
+    device = device
+  )
+  print(joint_ale_one)
+}
+
+##
 # Stochastic ensemble generation on test split
 
 n_ens <- 30
@@ -568,6 +766,25 @@ for(i in seq(ncol(y_test))) {
                pch='+', col = scales::alpha("darkblue", 0.05))
     }
     grid()
+}
+
+dev.next()
+plot(joint_ale)
+
+if (image_interpretation_ready) {
+  dev.next()
+  plot(joint_image_contrast)
+
+  dev.next()
+  plot(joint_occlusion, statistic = "mean_signed_effect")
+}
+
+dev.next()
+plot(surge_tail_sources, row = 1L)
+
+if (run_single_component_interpretation) {
+  dev.next()
+  plot(joint_ale_one, type = "channels")
 }
 
 ##

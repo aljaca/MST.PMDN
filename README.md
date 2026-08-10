@@ -28,7 +28,7 @@ By combining appropriate values of `constraint` and `constant_attr`, MST-PMDN im
 
 A comparison between ['mclust'](https://cran.r-project.org/package=mclust) and MST-PMDN with the constraints in the table above is [shown here](examples/example-iris-mclust.pdf) for the ['iris'](https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/iris.html) dataset. Similarly, if the constraint on the nu parameter (n) is loosened (e.g., `constraint = "VVVEN"` with `constant_attr = "LADmxn"`), MST-PMDN can emulate model-based multivariate t clustering models provided by ['teigen'](https://cran.r-project.org/package=teigen). Going one step further, removing the constraint on the skewness parameter (s) (e.g., `constraint = "VVVEE"` with `constant_attr = "LADmxns"`) implements a restricted form of model-based multivariate skew t clustering (['EMMIXcskew'](https://doi.org/10.18637/jss.v083.i03) and previous packages).
 
-While it can be used for model-based density estimation and clustering tasks, the primary purpose of the `MST.PMDN` package is to implement likelihood-based deep generative models. With unconstrained or partially constrained `constant_attr`, the MST-PMDN framework allows parameters of the mixture of multivariate Gaussian, t, or skew t distributions to depend on tabular and image covariates via user-specified `torch` modules. An example of this use case, here demonstrated through simultaneous prediction of significant wave height and storm surge, is provided below.
+While it can be used for model-based density estimation and clustering tasks, the primary purpose of the `MST.PMDN` package is to implement likelihood-based deep generative models. With unconstrained or partially constrained `constant_attr`, the MST-PMDN framework allows parameters of the mixture of multivariate Gaussian, t, or skew t distributions to depend on tabular and image covariates via user-specified `torch` modules. The interpretation layer evaluates scientifically meaningful distribution functionals, estimates tabular accumulated local effects and centred ICE, maps spatial image-occlusion effects, decomposes one-component contrasts among physical parameter channels, and attributes mixture exceedance risk to components. An example of the modelling use case, here demonstrated through simultaneous prediction of significant wave height and storm surge, is provided below.
 
 ## Deep MST-PMDN Architecture
 
@@ -272,6 +272,44 @@ print(head(tt))
 
 qq <- quantile_marginal_mst_pmdn(pred, tt, draws = samples)
 print(head(qq))
+
+# Functional-first interpretation of the complete two-component mixture
+wave_q99 <- mst_functional("quantile", responses = 1L, prob = 0.99)
+wave_q99_values <- functional_mst_pmdn(
+  pred,
+  wave_q99,
+  num_samples = 4096L,
+  seed = 20260806,
+  device = device
+)
+print(head(wave_q99_values$data))
+
+# ALE remains valid for a mixture. The matching image is held fixed whenever
+# the selected tabular predictor changes.
+wave_ale <- ale_mst_pmdn(
+  fit$model,
+  inputs = x,
+  image_inputs = x_image,
+  feature = 1L,
+  functional = wave_q99,
+  n_bins = 15L,
+  num_samples = 4096L,
+  seed = 20260806,
+  device = device
+)
+plot(wave_ale)
+
+# Mixture exceedance accounting separates component prevalence, within-
+# component tail propensity, and contribution to total exceedance probability.
+wave_tail_sources <- tail_components_mst_pmdn(
+  pred,
+  response = 1L,
+  threshold = 2,
+  num_samples = 4096L,
+  seed = 20260806,
+  device = device
+)
+print(head(wave_tail_sources$data))
 ```
 
 Output from a more complete example using an extended dataset at the same location is [shown here](examples/wave-surge-dailymax.pdf),
@@ -290,7 +328,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Function: `sample_gamma(shape, scale, device)`
 
 *   **Purpose:** Generates random samples from a Gamma distribution using `torch`.
-*   **Method:** Wraps R's `rgamma` function, vectorizes it using `mapply`, and converts the output to a `torch` tensor on the specified device.
+*   **Method:** Uses one vectorized R `rgamma` call and converts the output to a `torch` tensor with the requested dtype and device.
 *   **Context:** Used within the `sample_mst_pmdn` function to generate the scaling variable needed for sampling from the t-distribution component of the skew-t.
 
 #### Function: `build_orthogonal_matrix(params, dim)`
@@ -405,6 +443,37 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Purpose:** Returns component scale matrices, their Cholesky factors, or actual skew-t/skew-normal covariance matrices.
 *   **Method:** Uses the `scale_chol` factor employed by the likelihood. For `type = "cov"`, the scale is transformed using both `nu` and `alpha`; covariance is undefined for finite `nu <= 2`, while `nu = Inf` uses the exact skew-normal limit.
 *   **Output:** A 4D tensor (or R array if `as_array = TRUE`) of shape `[batch_size, M, d, d]`.
+
+### Distribution-functional interpretation
+
+#### Functions: `mst_functional(...)` and `functional_mst_pmdn(...)`
+
+*   **Purpose:** Define and evaluate one scalar scientific summary per prediction row.
+*   **Method:** Means, variances, standard deviations, covariance, and correlation use exact component and mixture moments, including between-component covariance. Quantiles, marginal and joint exceedances, tail spread, and normalized generalized Bowley tail asymmetry use a parameter-independent latent bank created by `latent_draws_mst_pmdn()`.
+*   **Diagnostics:** Tail summaries report the expected number of Monte Carlo draws in the relevant tail and flag inadequate resolution. Mixture results separately retain expected component draw counts; because component uniforms are shared across rows, component-selection Monte Carlo error does not average away along an effect curve. Exact moments return undefined values when finite degrees of freedom do not support them.
+
+#### Functions: `ale_mst_pmdn(...)` and `ice_mst_pmdn(...)`
+
+*   **Purpose:** Explain how a tabular covariate changes a selected distribution functional.
+*   **Method:** One-dimensional ALE uses non-empty empirical bins and locally supported lower-to-upper contrasts. Effects are displayed at bin midpoints by subtracting half the current bin effect, which assumes within-bin linearity rather than using the boundary-valued Apley-Zhu convention. Centred ICE shows case-level heterogeneity, an optional or precomputed ALE overlay, optional local slopes, and Plate-style baseline-contrast/slope data. A case's image remains aligned and fixed during tabular perturbations.
+*   **Scope:** A named feature is accepted when input columns are named; otherwise use R's 1-based column indices. Deterministically linked predictors, such as sine/cosine seasonal harmonics, should be perturbed as a scientifically coherent group outside this one-dimensional API.
+
+#### Functions: `image_contrast_mst_pmdn(...)` and `image_occlusion_mst_pmdn(...)`
+
+*   **Purpose:** Measure whole-image and spatial patch effects on the same scalar functionals used by the tabular layer.
+*   **Method:** Observed image regions are replaced by a required reference field, optionally with cosine tapering and overlapping patches. When an input channel is deterministically derived from another, a `rebuild_channels` callback should perturb the fundamental physical field, recompute every linked channel such as a pressure gradient, apply the original preprocessing, and return a complete model-ready tensor.
+*   **Interpretation:** Patch effects are spatial sensitivity measures. They do not generally add across overlapping patches to the whole-image contrast.
+
+#### Function: `decompose_mst_pmdn(...)`
+
+*   **Purpose:** For one-component models, allocate a known functional contrast among location, complete scale, skewness, and degrees-of-freedom channels.
+*   **Method:** Exact Shapley averaging evaluates all hybrid parameter states—16 when all four channels are active—and reports the numerical sum-to-total residual. Structurally inactive or unchanged channels disappear automatically. The complete Cholesky factor is the scale block; because it maps standardized skew direction into response space, its contribution includes the induced rotation of that direction.
+*   **Scope:** This is parameter-channel attribution rather than feature SHAP. Full channel decomposition is disabled for mixtures because component labels and compensating component changes are not identified.
+
+#### Function: `tail_components_mst_pmdn(...)`
+
+*   **Purpose:** Provide a mixture-safe explanation of exceedance probability.
+*   **Output:** For each component, reports its weight, within-component exceedance probability, contribution to total exceedance probability, tail share, and contribution rank. Probability is estimated directly within each component and combined analytically with its mixture weight, avoiding extra mixture-selection noise. Component labels remain descriptive indices rather than assumed physical regimes.
 
 
 ## References
