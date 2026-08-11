@@ -128,6 +128,12 @@ test_that("image occlusion can return single-component channel maps", {
   expect_equal(result$data$channel_location, result$data$effect,
                tolerance = 1e-6)
   expect_equal(result$data$sum_to_total_residual, 0, tolerance = 1e-10)
+  expect_true(result$settings$reused_original_endpoint)
+  expect_true(all(vapply(
+    result$diagnostics$occluded,
+    function(x) x$reused_to_endpoint,
+    logical(1)
+  )))
 })
 
 test_that("finite skewed mixture occlusion reaches complete functional sampling", {

@@ -146,3 +146,50 @@ test_that("decomposition reports exact parameter change magnitudes", {
     tolerance = 1e-7
   )
 })
+
+test_that("chunk-first Shapley evaluation reuses each df parent", {
+  B <- 20L
+  pred_from <- make_mdn_output(
+    pi = matrix(1, B, 1),
+    mu = array(seq(-0.5, 0.5, length.out = B), c(B, 1, 1)),
+    scale_chol = array(1, c(B, 1, 1, 1)),
+    nu = matrix(6, B, 1),
+    alpha = array(-0.4, c(B, 1, 1))
+  )
+  pred_to <- make_mdn_output(
+    pi = matrix(1, B, 1),
+    mu = array(seq(0.2, 1.2, length.out = B), c(B, 1, 1)),
+    scale_chol = array(1.4, c(B, 1, 1, 1)),
+    nu = matrix(15, B, 1),
+    alpha = array(0.8, c(B, 1, 1))
+  )
+  base_bank <- latent_draws_mst_pmdn(
+    128L, output_dim = 1L, seed = 32
+  )
+  chunk_bank <- base_bank
+  chunk_bank$.cache <- new.env(parent = emptyenv())
+  whole_bank <- base_bank
+  whole_bank$.cache <- new.env(parent = emptyenv())
+  functional <- mst_functional("quantile", 1L, prob = 0.9)
+
+  chunked <- suppressWarnings(decompose_mst_pmdn(
+    pred_from,
+    pred_to,
+    functional,
+    latent_draws = chunk_bank,
+    chunk_size = 2L
+  ))
+  whole <- suppressWarnings(decompose_mst_pmdn(
+    pred_from,
+    pred_to,
+    functional,
+    latent_draws = whole_bank,
+    chunk_size = B
+  ))
+
+  expect_equal(chunked$data, whole$data, tolerance = 0)
+  expect_equal(chunked$settings$chunks, 10L)
+  expect_equal(chunk_bank$.cache$gamma_scale_misses, 20L)
+  expect_equal(chunk_bank$.cache$gamma_scale_hits, 140L)
+  expect_true(length(chunk_bank$.cache$gamma_scale_entries) <= 8L)
+})

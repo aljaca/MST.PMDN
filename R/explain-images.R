@@ -571,7 +571,8 @@ image_occlusion_mst_pmdn <- function(model,
       )
 
       if (isTRUE(decompose)) {
-        decomposition <- .muffle_tail_resolution_mst_pmdn(decompose_mst_pmdn(
+        decomposition <- .muffle_tail_resolution_mst_pmdn(
+          .decompose_mst_pmdn_impl(
           pred_from = pred_occluded,
           pred_to = pred_original,
           functional = functional,
@@ -581,7 +582,8 @@ image_occlusion_mst_pmdn <- function(model,
           chunk_size = chunk_size,
           device = device,
           response_names = response_names,
-          min_tail_draws = min_tail_draws
+          min_tail_draws = min_tail_draws,
+          .known_to_result = original_result
         ))
         effect <- decomposition$data$total
         active_channels <- union(
@@ -667,7 +669,8 @@ image_occlusion_mst_pmdn <- function(model,
     diagnostics,
     function(x) {
       if (!is.null(x$low_tail_resolution_evaluations)) {
-        x$low_tail_resolution_evaluations
+        x$low_tail_resolution_evaluations -
+          x$reused_to_low_tail_resolution_evaluations
       } else {
         length(x$low_tail_resolution_rows)
       }
@@ -697,6 +700,7 @@ image_occlusion_mst_pmdn <- function(model,
       stride = stride,
       taper = taper,
       decomposed = isTRUE(decompose),
+      reused_original_endpoint = isTRUE(decompose),
       rebuild_channels = !is.null(rebuild_channels),
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
