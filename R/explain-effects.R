@@ -143,15 +143,17 @@
                                                latent_draws,
                                                chunk_size,
                                                device,
-                                               response_names) {
-  suppressWarnings(functional_mst_pmdn(
+                                               response_names,
+                                               min_tail_draws) {
+  .muffle_tail_resolution_warnings_mst_pmdn(functional_mst_pmdn(
     pred = pred,
     functional = functional,
     num_samples = num_samples,
     latent_draws = latent_draws,
     chunk_size = chunk_size,
     device = device,
-    response_names = response_names
+    response_names = response_names,
+    min_tail_draws = min_tail_draws
   ))
 }
 
@@ -211,7 +213,8 @@ ale_mst_pmdn <- function(model,
                          seed = NULL,
                          chunk_size = NULL,
                          device = "cpu",
-                         response_names = NULL) {
+                         response_names = NULL,
+                         min_tail_draws = 20L) {
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }
@@ -219,6 +222,7 @@ ale_mst_pmdn <- function(model,
   feature_info <- .resolve_feature_mst_pmdn(feature, inputs_matrix)
   .validate_image_alignment_mst_pmdn(image_inputs, nrow(inputs_matrix))
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
   if (isTRUE(decompose)) {
     probe <- .predict_chunks_mst_pmdn(
       model,
@@ -262,7 +266,8 @@ ale_mst_pmdn <- function(model,
     )
 
     if (isTRUE(decompose)) {
-      decomposition <- suppressWarnings(decompose_mst_pmdn(
+      decomposition <- .muffle_tail_resolution_warnings_mst_pmdn(
+        decompose_mst_pmdn(
         pred_from = pred_low,
         pred_to = pred_high,
         functional = functional,
@@ -272,7 +277,8 @@ ale_mst_pmdn <- function(model,
         num_samples = num_samples,
         chunk_size = chunk_size,
         device = device,
-        response_names = response_names
+        response_names = response_names,
+        min_tail_draws = min_tail_draws
       ))
       local_effect <- decomposition$data$total
       active_channels <- union(
@@ -283,28 +289,35 @@ ale_mst_pmdn <- function(model,
         function(channel) decomposition$data[[paste0("channel_", channel)]]
       )
       names(bin_channel_effects[[k]]) <- decomposition$active_channels
-      functional_diagnostics[[k]] <- list(
-        min_expected_tail_draws =
-          decomposition$diagnostics$min_expected_tail_draws,
-        decomposition = decomposition$diagnostics
+      functional_diagnostics[[k]] <- c(
+        list(decomposition = decomposition$diagnostics),
+        decomposition$diagnostics[c(
+          "min_expected_tail_draws",
+          "low_tail_resolution_count",
+          "tail_resolution_evaluations",
+          "low_tail_resolution_evaluations"
+        )]
       )
     } else {
       low <- .functional_values_quiet_mst_pmdn(
         pred_low, functional, num_samples, latent_draws,
-        chunk_size, device, response_names
+        chunk_size, device, response_names, min_tail_draws
       )
       high <- .functional_values_quiet_mst_pmdn(
         pred_high, functional, num_samples, latent_draws,
-        chunk_size, device, response_names
+        chunk_size, device, response_names, min_tail_draws
       )
       local_effect <- high$data$value - low$data$value
-      functional_diagnostics[[k]] <- list(
-        min_expected_tail_draws = .min_finite_mst_pmdn(c(
-          low$data$expected_tail_draws,
-          high$data$expected_tail_draws
-        )),
-        low = low$diagnostics,
-        high = high$diagnostics
+      bin_tail_summary <- .tail_resolution_summary_mst_pmdn(
+        list(low$diagnostics, high$diagnostics),
+        min_tail_draws
+      )
+      functional_diagnostics[[k]] <- c(
+        list(
+          low = low$diagnostics,
+          high = high$diagnostics
+        ),
+        bin_tail_summary
       )
     }
     bin_effect[k] <- mean(local_effect)
@@ -354,6 +367,12 @@ ale_mst_pmdn <- function(model,
   } else {
     rep(NA_real_, K)
   }
+  tail_summary <- .tail_resolution_summary_mst_pmdn(
+    functional_diagnostics, min_tail_draws
+  )
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "ale_mst_pmdn()"
+  )
   out <- list(
     data = data,
     breaks = breaks,
@@ -366,19 +385,20 @@ ale_mst_pmdn <- function(model,
       num_samples = actual_samples,
       chunk_size = chunk_size,
       device = device,
-      decomposed = isTRUE(decompose)
+      decomposed = isTRUE(decompose),
+      min_tail_draws = min_tail_draws
     ),
-    diagnostics = list(
-      bin = functional_diagnostics,
-      min_expected_tail_draws_by_bin = minimum_tail_by_bin,
-      min_expected_tail_draws = .min_finite_mst_pmdn(
-        minimum_tail_by_bin
+    diagnostics = c(
+      list(
+        bin = functional_diagnostics,
+        min_expected_tail_draws_by_bin = minimum_tail_by_bin,
+        max_abs_sum_to_total_residual = if (length(active_channels)) {
+          .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
+        } else {
+          NA_real_
+        }
       ),
-      max_abs_sum_to_total_residual = if (length(active_channels)) {
-        .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
-      } else {
-        NA_real_
-      }
+      tail_summary
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
@@ -395,6 +415,7 @@ ice_mst_pmdn <- function(model,
                          grid = NULL,
                          reference = NULL,
                          n_curves = 100L,
+                         cases = NULL,
                          ale = TRUE,
                          n_bins = 20L,
                          num_samples = 4096L,
@@ -402,17 +423,25 @@ ice_mst_pmdn <- function(model,
                          seed = NULL,
                          chunk_size = NULL,
                          device = "cpu",
-                         response_names = NULL) {
+                         response_names = NULL,
+                         min_tail_draws = 20L) {
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }
   inputs_matrix <- .as_input_matrix_mst_pmdn(inputs)
   feature_info <- .resolve_feature_mst_pmdn(feature, inputs_matrix)
   .validate_image_alignment_mst_pmdn(image_inputs, nrow(inputs_matrix))
-  n_curves <- min(validate_num_samples(n_curves), nrow(inputs_matrix))
-  case_rows <- unique(as.integer(round(seq(
-    1, nrow(inputs_matrix), length.out = n_curves
-  ))))
+  if (is.null(cases)) {
+    n_curves <- min(validate_num_samples(n_curves), nrow(inputs_matrix))
+    case_rows <- unique(as.integer(round(seq(
+      1, nrow(inputs_matrix), length.out = n_curves
+    ))))
+    case_selection <- "systematic"
+  } else {
+    case_rows <- .validate_cases_mst_pmdn(cases, nrow(inputs_matrix))
+    n_curves <- length(case_rows)
+    case_selection <- "explicit"
+  }
   feature_values <- inputs_matrix[, feature_info$index]
   if (is.null(grid)) {
     grid <- unique(as.numeric(stats::quantile(
@@ -436,6 +465,7 @@ ice_mst_pmdn <- function(model,
     stop("reference must be one finite feature value.", call. = FALSE)
   }
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
 
   selected_inputs <- inputs_matrix[case_rows, , drop = FALSE]
   selected_images <- .subset_rows_mst_pmdn(image_inputs, case_rows)
@@ -450,7 +480,7 @@ ice_mst_pmdn <- function(model,
   )
   reference_result <- .functional_values_quiet_mst_pmdn(
     pred_reference, functional, num_samples, latent_draws,
-    chunk_size, device, response_names
+    chunk_size, device, response_names, min_tail_draws
   )
   reference_values <- reference_result$data$value
 
@@ -465,7 +495,7 @@ ice_mst_pmdn <- function(model,
     )
     result <- .functional_values_quiet_mst_pmdn(
       pred_grid, functional, num_samples, latent_draws,
-      chunk_size, device, response_names
+      chunk_size, device, response_names, min_tail_draws
     )
     values[, g] <- result$data$value
     grid_diagnostics[[g]] <- result$diagnostics
@@ -489,7 +519,8 @@ ice_mst_pmdn <- function(model,
     ale_result <- ale
     ale_mode <- "supplied"
   } else if (isTRUE(ale)) {
-    ale_result <- ale_mst_pmdn(
+    ale_result <- .muffle_tail_resolution_warnings_mst_pmdn(
+      ale_mst_pmdn(
       model = model,
       inputs = inputs_matrix,
       image_inputs = image_inputs,
@@ -501,8 +532,9 @@ ice_mst_pmdn <- function(model,
       latent_draws = latent_draws,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
-    )
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
+    ))
     ale_mode <- "computed"
   } else if (identical(ale, FALSE) || is.null(ale)) {
     ale_result <- NULL
@@ -512,6 +544,19 @@ ice_mst_pmdn <- function(model,
          call. = FALSE)
   }
 
+  tail_diagnostics <- c(
+    list(reference_result$diagnostics),
+    grid_diagnostics
+  )
+  if (identical(ale_mode, "computed")) {
+    tail_diagnostics <- c(tail_diagnostics, list(ale_result$diagnostics))
+  }
+  tail_summary <- .tail_resolution_summary_mst_pmdn(
+    tail_diagnostics, min_tail_draws
+  )
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "ice_mst_pmdn()"
+  )
   out <- list(
     curves = curves,
     ale = ale_result,
@@ -525,11 +570,21 @@ ice_mst_pmdn <- function(model,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,
-      device = device
+      device = device,
+      case_selection = case_selection,
+      min_tail_draws = min_tail_draws
     ),
-    diagnostics = list(
-      reference = reference_result$diagnostics,
-      grid = grid_diagnostics
+    diagnostics = c(
+      list(
+        reference = reference_result$diagnostics,
+        grid = grid_diagnostics,
+        ale = if (identical(ale_mode, "computed")) {
+          ale_result$diagnostics
+        } else {
+          NULL
+        }
+      ),
+      tail_summary
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )

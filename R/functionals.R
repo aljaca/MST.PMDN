@@ -381,6 +381,103 @@ print.mst_functional <- function(x, ...) {
   if (length(x)) max(x) else NA_real_
 }
 
+.tail_resolution_summary_mst_pmdn <- function(diagnostics,
+                                                min_tail_draws) {
+  if (is.null(diagnostics)) diagnostics <- list()
+  if (!is.list(diagnostics)) {
+    stop("diagnostics must be a list.", call. = FALSE)
+  }
+  if (!is.null(diagnostics$min_expected_tail_draws)) {
+    diagnostics <- list(diagnostics)
+  }
+  diagnostics <- Filter(Negate(is.null), diagnostics)
+
+  minimum <- vapply(diagnostics, function(item) {
+    value <- item$min_expected_tail_draws
+    if (is.null(value) || !length(value)) NA_real_ else as.numeric(value[1L])
+  }, numeric(1))
+  low_count <- vapply(diagnostics, function(item) {
+    if (!is.null(item$low_tail_resolution_count)) {
+      return(as.integer(item$low_tail_resolution_count))
+    }
+    as.integer(length(item$low_tail_resolution_rows))
+  }, integer(1))
+  evaluations <- vapply(diagnostics, function(item) {
+    if (!is.null(item$tail_resolution_evaluations)) {
+      return(as.integer(item$tail_resolution_evaluations))
+    }
+    value <- item$min_expected_tail_draws
+    as.integer(length(value) && is.finite(value[1L]))
+  }, integer(1))
+  affected <- vapply(diagnostics, function(item) {
+    if (!is.null(item$low_tail_resolution_evaluations)) {
+      return(as.integer(item$low_tail_resolution_evaluations))
+    }
+    as.integer(
+      (!is.null(item$low_tail_resolution_count) &&
+       item$low_tail_resolution_count > 0L) ||
+      length(item$low_tail_resolution_rows) > 0L
+    )
+  }, integer(1))
+
+  list(
+    min_tail_draws = as.integer(min_tail_draws),
+    min_expected_tail_draws = .min_finite_mst_pmdn(minimum),
+    low_tail_resolution_count = sum(low_count),
+    tail_resolution_evaluations = sum(evaluations),
+    low_tail_resolution_evaluations = sum(affected)
+  )
+}
+
+.warn_tail_resolution_mst_pmdn <- function(summary, context) {
+  if (is.null(summary$low_tail_resolution_count) ||
+      summary$low_tail_resolution_count < 1L) {
+    return(invisible(FALSE))
+  }
+  condition <- structure(
+    list(
+      message = sprintf(
+        paste0(
+          "%s: Monte Carlo tail resolution is below %d expected draws for ",
+          "%d evaluated prediction row(s) across %d of %d functional ",
+          "evaluation(s); minimum expected draws = %s. Increase num_samples ",
+          "or inspect diagnostics."
+        ),
+        context,
+        summary$min_tail_draws,
+        summary$low_tail_resolution_count,
+        summary$low_tail_resolution_evaluations,
+        summary$tail_resolution_evaluations,
+        format(summary$min_expected_tail_draws, digits = 5)
+      ),
+      call = NULL,
+      min_tail_draws = summary$min_tail_draws,
+      min_expected_tail_draws = summary$min_expected_tail_draws,
+      low_tail_resolution_count = summary$low_tail_resolution_count,
+      tail_resolution_evaluations = summary$tail_resolution_evaluations,
+      low_tail_resolution_evaluations =
+        summary$low_tail_resolution_evaluations,
+      context = context
+    ),
+    class = c(
+      "mst_pmdn_tail_resolution_warning",
+      "warning",
+      "condition"
+    )
+  )
+  warning(condition)
+  invisible(TRUE)
+}
+
+.muffle_tail_resolution_warnings_mst_pmdn <- function(expr) {
+  withCallingHandlers(
+    expr,
+    mst_pmdn_tail_resolution_warning = function(condition) {
+      invokeRestart("muffleWarning")
+    }
+  )
+}
+
 .analytic_functional_mst_pmdn <- function(pred, functional, responses) {
   type <- functional$type
   info <- .validate_prediction_mst_pmdn(pred)
@@ -646,19 +743,23 @@ functional_mst_pmdn <- function(pred,
   } else {
     NULL
   }
-  if (any(low_resolution)) {
-    warning(
-      sprintf(
-        paste0(
-          "Monte Carlo tail resolution is below %d expected draws for %d ",
-          "prediction row(s); increase num_samples or inspect diagnostics."
-        ),
-        min_tail_draws,
-        sum(low_resolution)
-      ),
-      call. = FALSE
-    )
-  }
+  tail_summary <- .tail_resolution_summary_mst_pmdn(
+    list(list(
+      min_expected_tail_draws = if (is_mc) {
+        .min_finite_mst_pmdn(expected_tail_draws)
+      } else {
+        NA_real_
+      },
+      low_tail_resolution_count = sum(low_resolution),
+      tail_resolution_evaluations = as.integer(is_mc),
+      low_tail_resolution_evaluations =
+        as.integer(is_mc && any(low_resolution))
+    )),
+    min_tail_draws
+  )
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "functional_mst_pmdn()"
+  )
   invalid_analytic <- is.na(values) |
     (!is.finite(values) & functional$type != "df")
   if (!is_mc && any(invalid_analytic)) {
@@ -684,20 +785,20 @@ functional_mst_pmdn <- function(pred,
       device = device,
       min_tail_draws = min_tail_draws
     ),
-    diagnostics = list(
-      low_tail_resolution_rows = which(low_resolution),
-      min_expected_tail_draws = if (is_mc) {
-        .min_finite_mst_pmdn(expected_tail_draws)
-      } else {
-        NA_real_
-      },
-      expected_component_draws = expected_component_draws,
-      min_expected_component_draws = if (is.null(expected_component_draws)) {
-        NA_real_
-      } else {
-        min(expected_component_draws)
-      },
-      component_draws_shared_across_rows = is_mc && info$n_mixtures > 1L
+    diagnostics = c(
+      list(
+        low_tail_resolution_rows = which(low_resolution),
+        expected_component_draws = expected_component_draws,
+        min_expected_component_draws =
+          if (is.null(expected_component_draws)) {
+            NA_real_
+          } else {
+            min(expected_component_draws)
+          },
+        component_draws_shared_across_rows =
+          is_mc && info$n_mixtures > 1L
+      ),
+      tail_summary
     ),
     latent_draws = if (is_mc) {
       .latent_draws_for_output_mst_pmdn(latent_draws)

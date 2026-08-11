@@ -190,6 +190,77 @@
   )
 }
 
+.normalize_latent_banks_mst_pmdn <- function(pred,
+                                               functional,
+                                               latent_draws,
+                                               num_samples,
+                                               seed,
+                                               device) {
+  if (!.functional_is_monte_carlo_mst_pmdn(functional$type)) {
+    return(list(NULL))
+  }
+  banks <- if (is.null(latent_draws) ||
+               inherits(latent_draws, "mst_pmdn_latent_draws")) {
+    list(latent_draws)
+  } else if (is.list(latent_draws) && length(latent_draws) &&
+             all(vapply(
+               latent_draws,
+               inherits,
+               logical(1),
+               what = "mst_pmdn_latent_draws"
+             ))) {
+    latent_draws
+  } else {
+    stop(
+      paste0(
+        "latent_draws must be a latent bank or a non-empty list of latent ",
+        "banks for image occlusion."
+      ),
+      call. = FALSE
+    )
+  }
+  banks <- lapply(banks, function(bank) {
+    .ensure_latent_bank_mst_pmdn(
+      pred, functional, bank, num_samples, seed, device
+    )
+  })
+  bank_samples <- vapply(banks, function(bank) {
+    bank$num_samples
+  }, integer(1))
+  if (length(unique(bank_samples)) != 1L) {
+    stop("Replicate latent banks must contain the same number of draws.",
+         call. = FALSE)
+  }
+  banks
+}
+
+.latent_banks_for_output_mst_pmdn <- function(banks) {
+  banks <- lapply(banks, .latent_draws_for_output_mst_pmdn)
+  if (length(banks) == 1L) banks[[1L]] else banks
+}
+
+.mc_effect_summary_mst_pmdn <- function(values) {
+  values <- as.matrix(values)
+  replicate_count <- ncol(values)
+  minimum <- apply(values, 1L, min)
+  maximum <- apply(values, 1L, max)
+  list(
+    effect = rowMeans(values),
+    mc_effect_sd = if (replicate_count > 1L) {
+      apply(values, 1L, stats::sd)
+    } else {
+      rep(NA_real_, nrow(values))
+    },
+    mc_effect_min = minimum,
+    mc_effect_max = maximum,
+    mc_sign_stable = if (replicate_count > 1L) {
+      (minimum > 0 & maximum > 0) | (minimum < 0 & maximum < 0)
+    } else {
+      rep(NA, nrow(values))
+    }
+  )
+}
+
 .normalize_channel_groups_mst_pmdn <- function(channel_groups, n_channels) {
   if (is.null(channel_groups)) {
     return(list(all = NULL))
@@ -238,7 +309,8 @@ image_contrast_mst_pmdn <- function(model,
                                     seed = NULL,
                                     chunk_size = NULL,
                                     device = "cpu",
-                                    response_names = NULL) {
+                                    response_names = NULL,
+                                    min_tail_draws = 20L) {
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }
@@ -290,6 +362,7 @@ image_contrast_mst_pmdn <- function(model,
     chunk_size = chunk_size, device = device
   )
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
   latent_draws <- .ensure_latent_bank_mst_pmdn(
     pred_original, functional, latent_draws, num_samples, seed, device
   )
@@ -297,7 +370,8 @@ image_contrast_mst_pmdn <- function(model,
 
   active_channels <- character(0)
   if (isTRUE(decompose)) {
-    decomposition <- suppressWarnings(decompose_mst_pmdn(
+    decomposition <- .muffle_tail_resolution_warnings_mst_pmdn(
+      decompose_mst_pmdn(
       pred_from = pred_reference,
       pred_to = pred_original,
       functional = functional,
@@ -306,7 +380,8 @@ image_contrast_mst_pmdn <- function(model,
       num_samples = num_samples,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
     ))
     data <- data.frame(
       case = cases,
@@ -325,11 +400,11 @@ image_contrast_mst_pmdn <- function(model,
   } else {
     original_result <- .functional_values_quiet_mst_pmdn(
       pred_original, functional, num_samples, latent_draws,
-      chunk_size, device, response_names
+      chunk_size, device, response_names, min_tail_draws
     )
     reference_result <- .functional_values_quiet_mst_pmdn(
       pred_reference, functional, num_samples, latent_draws,
-      chunk_size, device, response_names
+      chunk_size, device, response_names, min_tail_draws
     )
     data <- data.frame(
       case = cases,
@@ -338,11 +413,29 @@ image_contrast_mst_pmdn <- function(model,
       contrast = original_result$data$value - reference_result$data$value,
       sum_to_total_residual = NA_real_
     )
-    diagnostics <- list(
-      original = original_result$diagnostics,
-      reference = reference_result$diagnostics
+    tail_summary <- .tail_resolution_summary_mst_pmdn(
+      list(original_result$diagnostics, reference_result$diagnostics),
+      min_tail_draws
+    )
+    diagnostics <- c(
+      list(
+        original = original_result$diagnostics,
+        reference = reference_result$diagnostics
+      ),
+      tail_summary
     )
   }
+  if (isTRUE(decompose)) {
+    tail_summary <- diagnostics[c(
+      "min_expected_tail_draws",
+      "low_tail_resolution_count",
+      "tail_resolution_evaluations",
+      "low_tail_resolution_evaluations"
+    )]
+  }
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "image_contrast_mst_pmdn()"
+  )
   out <- list(
     data = data,
     functional = functional,
@@ -354,7 +447,8 @@ image_contrast_mst_pmdn <- function(model,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,
-      device = device
+      device = device,
+      min_tail_draws = min_tail_draws
     ),
     diagnostics = diagnostics,
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
@@ -422,7 +516,8 @@ image_occlusion_mst_pmdn <- function(model,
                                      seed = NULL,
                                      chunk_size = NULL,
                                      device = "cpu",
-                                     response_names = NULL) {
+                                     response_names = NULL,
+                                     min_tail_draws = 20L) {
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }
@@ -440,6 +535,7 @@ image_occlusion_mst_pmdn <- function(model,
   reference_images <- .coerce_reference_images_like_mst_pmdn(
     reference_images, image_inputs
   )
+  grouped_channels <- !is.null(channel_groups)
   groups <- .normalize_channel_groups_mst_pmdn(
     channel_groups, image_shape[2]
   )
@@ -454,11 +550,16 @@ image_occlusion_mst_pmdn <- function(model,
   reference <- .subset_rows_mst_pmdn(reference_images, cases)
   n <- length(cases)
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
 
   original_images <- .rebuild_or_blend_images_mst_pmdn(
     base,
     reference,
-    .zero_mask_mst_pmdn(base, n),
+    .zero_mask_mst_pmdn(
+      base,
+      n,
+      channels = if (grouped_channels) seq_len(image_shape[2]) else NULL
+    ),
     rebuild_channels,
     cases
   )
@@ -469,14 +570,24 @@ image_occlusion_mst_pmdn <- function(model,
   if (isTRUE(decompose)) {
     .require_single_component_mst_pmdn(pred_original)
   }
-  latent_draws <- .ensure_latent_bank_mst_pmdn(
-    pred_original, functional, latent_draws, num_samples, seed, device
+  latent_banks <- .normalize_latent_banks_mst_pmdn(
+    pred_original,
+    functional,
+    latent_draws,
+    num_samples,
+    seed,
+    device
   )
-  if (!is.null(latent_draws)) num_samples <- latent_draws$num_samples
-  original_result <- .functional_values_quiet_mst_pmdn(
-    pred_original, functional, num_samples, latent_draws,
-    chunk_size, device, response_names
-  )
+  replicate_count <- length(latent_banks)
+  if (!is.null(latent_banks[[1L]])) {
+    num_samples <- latent_banks[[1L]]$num_samples
+  }
+  original_results <- lapply(latent_banks, function(bank) {
+    .functional_values_quiet_mst_pmdn(
+      pred_original, functional, num_samples, bank,
+      chunk_size, device, response_names, min_tail_draws
+    )
+  })
 
   row_starts <- .patch_starts_mst_pmdn(
     image_shape[3], patch_size[1], stride[1]
@@ -494,8 +605,15 @@ image_occlusion_mst_pmdn <- function(model,
   patch_table$col_end <- patch_table$col_start + patch_size[2] - 1L
   patch_table$row_center <- (patch_table$row_start + patch_table$row_end) / 2
   patch_table$col_center <- (patch_table$col_start + patch_table$col_end) / 2
+  patch_table$mask_sum <- NA_real_
+  patch_table$mask_mean <- NA_real_
+  patch_table$mask_max <- NA_real_
   coverage <- matrix(0, nrow = image_shape[3], ncol = image_shape[4])
+  weighted_coverage <- matrix(
+    0, nrow = image_shape[3], ncol = image_shape[4]
+  )
   rows_out <- list()
+  replicate_rows_out <- list()
   active_channels <- character(0)
   diagnostics <- list()
   output_index <- 0L
@@ -508,7 +626,13 @@ image_occlusion_mst_pmdn <- function(model,
       patch_size,
       taper
     )
+    patch_weights <- patch_mask[patch_mask > 0]
+    patch_table$mask_sum[patch_row] <- sum(patch_weights)
+    patch_table$mask_mean[patch_row] <- mean(patch_weights)
+    patch_table$mask_max[patch_row] <- max(patch_weights)
     coverage <- coverage + (patch_mask > 0)
+    weighted_coverage <- weighted_coverage + patch_mask
+
     for (group_name in names(groups)) {
       group <- groups[[group_name]]
       masks <- .mask_like_images_mst_pmdn(
@@ -522,37 +646,87 @@ image_occlusion_mst_pmdn <- function(model,
         original_images,
         "rebuilt occluded images"
       )
+      # The model prediction is independent of the latent bank and is retained
+      # for every replicate evaluation below.
       pred_occluded <- .predict_chunks_mst_pmdn(
         model, case_inputs, occluded_images,
         chunk_size = chunk_size, device = device
       )
 
+      channel_matrices <- list()
       if (isTRUE(decompose)) {
-        decomposition <- suppressWarnings(decompose_mst_pmdn(
-          pred_from = pred_occluded,
-          pred_to = pred_original,
-          functional = functional,
-          channels = channels,
-          latent_draws = latent_draws,
-          num_samples = num_samples,
-          chunk_size = chunk_size,
-          device = device,
-          response_names = response_names
+        replicate_results <- lapply(latent_banks, function(bank) {
+          .muffle_tail_resolution_warnings_mst_pmdn(
+            decompose_mst_pmdn(
+              pred_from = pred_occluded,
+              pred_to = pred_original,
+              functional = functional,
+              channels = channels,
+              latent_draws = bank,
+              num_samples = num_samples,
+              chunk_size = chunk_size,
+              device = device,
+              response_names = response_names,
+              min_tail_draws = min_tail_draws
+            )
+          )
+        })
+        effect_values <- do.call(cbind, lapply(
+          replicate_results, function(result) result$data$total
         ))
-        effect <- decomposition$data$total
-        active_channels <- union(
-          active_channels, decomposition$active_channels
+        patch_active <- Reduce(
+          union,
+          lapply(replicate_results, function(result) {
+            result$active_channels
+          }),
+          init = character(0)
         )
-        diagnostic <- decomposition$diagnostics
+        active_channels <- union(active_channels, patch_active)
+        for (channel in requested_channels) {
+          column <- paste0("channel_", channel)
+          channel_matrices[[channel]] <- do.call(cbind, lapply(
+            replicate_results,
+            function(result) {
+              if (channel %in% result$active_channels) {
+                result$data[[column]]
+              } else {
+                rep(0, n)
+              }
+            }
+          ))
+        }
+        replicate_diagnostics <- lapply(
+          replicate_results, function(result) result$diagnostics
+        )
       } else {
-        occluded_result <- .functional_values_quiet_mst_pmdn(
-          pred_occluded, functional, num_samples, latent_draws,
-          chunk_size, device, response_names
+        replicate_results <- lapply(
+          seq_along(latent_banks),
+          function(replicate) {
+            .functional_values_quiet_mst_pmdn(
+              pred_occluded,
+              functional,
+              num_samples,
+              latent_banks[[replicate]],
+              chunk_size,
+              device,
+              response_names,
+              min_tail_draws
+            )
+          }
         )
-        effect <- original_result$data$value - occluded_result$data$value
-        diagnostic <- occluded_result$diagnostics
+        effect_values <- do.call(cbind, lapply(
+          seq_along(replicate_results),
+          function(replicate) {
+            original_results[[replicate]]$data$value -
+              replicate_results[[replicate]]$data$value
+          }
+        ))
+        replicate_diagnostics <- lapply(
+          replicate_results, function(result) result$diagnostics
+        )
       }
 
+      effect_summary <- .mc_effect_summary_mst_pmdn(effect_values)
       output_index <- output_index + 1L
       block <- data.frame(
         case = cases,
@@ -564,61 +738,166 @@ image_occlusion_mst_pmdn <- function(model,
         col_end = patch_table$col_end[patch_row],
         row_center = patch_table$row_center[patch_row],
         col_center = patch_table$col_center[patch_row],
-        effect = effect
+        effect = effect_summary$effect,
+        mc_effect_sd = effect_summary$mc_effect_sd,
+        mc_effect_min = effect_summary$mc_effect_min,
+        mc_effect_max = effect_summary$mc_effect_max,
+        mc_sign_stable = effect_summary$mc_sign_stable,
+        mc_replicates = replicate_count
       )
       if (isTRUE(decompose)) {
         for (channel in requested_channels) {
-          column <- paste0("channel_", channel)
-          block[[column]] <- if (channel %in% decomposition$active_channels) {
-            decomposition$data[[column]]
-          } else {
-            0
-          }
+          block[[paste0("channel_", channel)]] <-
+            rowMeans(channel_matrices[[channel]])
         }
-        block$sum_to_total_residual <-
-          decomposition$data$sum_to_total_residual
+        block$sum_to_total_residual <- block$effect - rowSums(
+          block[paste0("channel_", requested_channels)]
+        )
       } else {
         block$sum_to_total_residual <- NA_real_
       }
       rows_out[[output_index]] <- block
-      diagnostics[[output_index]] <- diagnostic
+
+      replicate_block <- do.call(rbind, lapply(
+        seq_len(replicate_count),
+        function(replicate) {
+          item <- data.frame(
+            case = cases,
+            group = group_name,
+            patch = patch_table$patch[patch_row],
+            row_center = patch_table$row_center[patch_row],
+            col_center = patch_table$col_center[patch_row],
+            replicate = replicate,
+            effect = effect_values[, replicate]
+          )
+          if (isTRUE(decompose)) {
+            for (channel in requested_channels) {
+              item[[paste0("channel_", channel)]] <-
+                channel_matrices[[channel]][, replicate]
+            }
+            item$sum_to_total_residual <- item$effect - rowSums(
+              item[paste0("channel_", requested_channels)]
+            )
+          } else {
+            item$sum_to_total_residual <- NA_real_
+          }
+          item
+        }
+      ))
+      rownames(replicate_block) <- NULL
+      replicate_rows_out[[output_index]] <- replicate_block
+      diagnostics[[output_index]] <- c(
+        list(replicate = replicate_diagnostics),
+        .tail_resolution_summary_mst_pmdn(
+          replicate_diagnostics, min_tail_draws
+        )
+      )
     }
   }
+
   data <- do.call(rbind, rows_out)
+  replicate_data <- do.call(rbind, replicate_rows_out)
   rownames(data) <- NULL
-  for (channel in active_channels) {
-    column <- paste0("channel_", channel)
-    if (!column %in% names(data)) data[[column]] <- 0
-    data[[column]][is.na(data[[column]])] <- 0
-  }
+  rownames(replicate_data) <- NULL
   inactive_channels <- setdiff(requested_channels, active_channels)
   if (length(inactive_channels)) {
     data[paste0("channel_", inactive_channels)] <- NULL
+    replicate_data[paste0("channel_", inactive_channels)] <- NULL
   }
   if (length(active_channels)) {
     data$sum_to_total_residual <- data$effect - rowSums(
       data[paste0("channel_", active_channels)]
     )
+    replicate_data$sum_to_total_residual <-
+      replicate_data$effect - rowSums(
+        replicate_data[paste0("channel_", active_channels)]
+      )
   }
-  population <- do.call(rbind, lapply(
-    split(data, list(data$group, data$patch), drop = TRUE),
+
+  population_replicate <- do.call(rbind, lapply(
+    split(
+      replicate_data,
+      list(
+        replicate_data$group,
+        replicate_data$patch,
+        replicate_data$replicate
+      ),
+      drop = TRUE
+    ),
     function(block) data.frame(
       group = block$group[1L],
       patch = block$patch[1L],
       row_center = block$row_center[1L],
       col_center = block$col_center[1L],
-      mean_signed_effect = mean(block$effect),
-      mean_absolute_effect = mean(abs(block$effect)),
-      positive_fraction = mean(block$effect > 0)
+      replicate = block$replicate[1L],
+      mean_signed_effect = mean(block$effect)
     )
+  ))
+  rownames(population_replicate) <- NULL
+  population <- do.call(rbind, lapply(
+    split(data, list(data$group, data$patch), drop = TRUE),
+    function(block) {
+      replicate_block <- population_replicate[
+        population_replicate$group == block$group[1L] &
+          population_replicate$patch == block$patch[1L],
+        ,
+        drop = FALSE
+      ]
+      mc_summary <- .mc_effect_summary_mst_pmdn(matrix(
+        replicate_block$mean_signed_effect,
+        nrow = 1L
+      ))
+      data.frame(
+        group = block$group[1L],
+        patch = block$patch[1L],
+        row_center = block$row_center[1L],
+        col_center = block$col_center[1L],
+        mean_signed_effect = mean(block$effect),
+        mean_absolute_effect = mean(abs(block$effect)),
+        positive_fraction = mean(block$effect > 0),
+        mc_mean_signed_effect_sd = mc_summary$mc_effect_sd,
+        mc_mean_signed_effect_min = mc_summary$mc_effect_min,
+        mc_mean_signed_effect_max = mc_summary$mc_effect_max,
+        mc_mean_signed_effect_sign_stable = mc_summary$mc_sign_stable,
+        mc_replicates = replicate_count
+      )
+    }
   ))
   rownames(population) <- NULL
 
+  original_diagnostics <- lapply(
+    original_results, function(result) result$diagnostics
+  )
+  tail_summary <- .tail_resolution_summary_mst_pmdn(
+    c(original_diagnostics, diagnostics),
+    min_tail_draws
+  )
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "image_occlusion_mst_pmdn()"
+  )
+  minimum_tail_by_evaluation <- c(
+    vapply(
+      original_diagnostics,
+      function(item) item$min_expected_tail_draws,
+      numeric(1)
+    ),
+    unlist(lapply(diagnostics, function(item) {
+      vapply(
+        item$replicate,
+        function(replicate) replicate$min_expected_tail_draws,
+        numeric(1)
+      )
+    }), use.names = FALSE)
+  )
+
   out <- list(
     data = data,
+    replicate_data = replicate_data,
     population = population,
+    population_replicate = population_replicate,
     patches = patch_table,
     coverage = coverage,
+    weighted_coverage = weighted_coverage,
     functional = functional,
     cases = cases,
     channel_groups = groups,
@@ -629,21 +908,35 @@ image_occlusion_mst_pmdn <- function(model,
       taper = taper,
       decomposed = isTRUE(decompose),
       rebuild_channels = !is.null(rebuild_channels),
-      num_samples = if (is.null(latent_draws)) NA_integer_ else
-        latent_draws$num_samples,
-      chunk_size = chunk_size,
-      device = device
-    ),
-    diagnostics = list(
-      original = original_result$diagnostics,
-      occluded = diagnostics,
-      max_abs_sum_to_total_residual = if (length(active_channels)) {
-        .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
+      num_samples = if (is.null(latent_banks[[1L]])) {
+        NA_integer_
       } else {
-        NA_real_
-      }
+        latent_banks[[1L]]$num_samples
+      },
+      mc_replicates = replicate_count,
+      chunk_size = chunk_size,
+      device = device,
+      min_tail_draws = min_tail_draws
     ),
-    latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
+    diagnostics = c(
+      list(
+        original = if (replicate_count == 1L) {
+          original_diagnostics[[1L]]
+        } else {
+          original_diagnostics
+        },
+        occluded = diagnostics,
+        min_expected_tail_draws_by_evaluation =
+          minimum_tail_by_evaluation,
+        max_abs_sum_to_total_residual = if (length(active_channels)) {
+          .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
+        } else {
+          NA_real_
+        }
+      ),
+      tail_summary
+    ),
+    latent_draws = .latent_banks_for_output_mst_pmdn(latent_banks)
   )
   class(out) <- "mst_pmdn_image_occlusion"
   out
@@ -668,6 +961,7 @@ print.mst_pmdn_image_occlusion <- function(x, ...) {
     "  cases: ", length(x$cases), "\n",
     "  patches: ", nrow(x$patches), "\n",
     "  channel groups: ", length(x$channel_groups), "\n",
+    "  Monte Carlo replicates: ", x$settings$mc_replicates, "\n",
     "  decomposed: ", x$settings$decomposed, "\n",
     sep = ""
   )

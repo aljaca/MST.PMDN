@@ -152,10 +152,26 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     to(dtype = torch_long())
 }
 
+.uniform_probability_bounds_mst_pmdn <- function(dtype) {
+  if (dtype == torch_float()) {
+    return(c(lower = 2^-25, upper = 1 - 2^-25))
+  }
+  # The lower midpoint is half a double-precision uniform quantum. The upper
+  # bound uses the largest representable double below one.
+  c(lower = 2^-54, upper = 1 - 2^-53)
+}
+
+.cache_key_elements_mst_pmdn <- function(key) {
+  if (is.null(key)) return(0L)
+  sum(vapply(key, length, integer(1)))
+}
+
 .gamma_scale_from_uniform_mst_pmdn <- function(nu,
                                                 gamma_u,
                                                 device,
-                                                cache = NULL) {
+                                                cache = NULL,
+                                                cache_key = NULL,
+                                                component_u = NULL) {
   B <- nu$size(1)
   S <- nu$size(2)
   normal <- nu == Inf
@@ -164,26 +180,53 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   }
 
   nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
-  nu_key <- as.numeric(torch::as_array(nu$to(device = "cpu")))
+  bounds <- .uniform_probability_bounds_mst_pmdn(gamma_u$dtype)
   gamma_key <- as.numeric(torch::as_array(gamma_u$to(device = "cpu")))
-  gamma_key <- pmin(
-    pmax(gamma_key, .Machine$double.xmin),
-    1 - .Machine$double.eps
-  )
+  gamma_key <- pmin(pmax(gamma_key, bounds["lower"]), bounds["upper"])
+  component_key <- if (is.null(component_u)) {
+    NULL
+  } else {
+    as.numeric(torch::as_array(component_u$to(device = "cpu")))
+  }
+
   entries <- if (is.environment(cache) &&
                  is.list(cache$gamma_scale_entries)) {
     cache$gamma_scale_entries
   } else {
     list()
   }
+  if (is.environment(cache)) {
+    same_bank <- identical(cache$gamma_scale_gamma_u, gamma_key) &&
+      identical(cache$gamma_scale_component_u, component_key)
+    if (!same_bank) {
+      entries <- list()
+      cache$gamma_scale_entries <- entries
+      cache$gamma_scale_gamma_u <- gamma_key
+      cache$gamma_scale_component_u <- component_key
+    }
+  }
+
+  expanded_nu_key <- if (is.null(cache_key)) {
+    as.numeric(torch::as_array(nu$to(device = "cpu")))
+  } else {
+    NULL
+  }
   hit <- which(vapply(entries, function(entry) {
     identical(entry$dim, c(B, S)) &&
-      identical(entry$nu, nu_key) &&
-      identical(entry$gamma_u, gamma_key)
+      (if (is.null(cache_key)) {
+        is.null(entry$cache_key) &&
+          identical(entry$expanded_nu, expanded_nu_key)
+      } else {
+        identical(entry$cache_key, cache_key)
+      })
   }, logical(1)))[1L]
 
   if (length(hit) && !is.na(hit)) {
     chi2_r <- entries[[hit]]$chi2
+    # Recently used chunks stay resident when the memory limit is reached.
+    entry <- entries[[hit]]
+    entries <- c(entries[-hit], list(entry))
+    cache$gamma_scale_entries <- entries
     cache$gamma_scale_hits <- if (is.null(cache$gamma_scale_hits)) {
       1L
     } else {
@@ -196,18 +239,20 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     if (is.environment(cache)) {
       entries[[length(entries) + 1L]] <- list(
         dim = c(B, S),
-        nu = nu_key,
-        gamma_u = gamma_key,
+        cache_key = cache_key,
+        expanded_nu = expanded_nu_key,
         chi2 = chi2_r
       )
-      # Shapley evaluation repeatedly visits only a few df states. Bound both
-      # entry count and all retained numeric elements so caching cannot defeat
-      # the functional evaluator's memory budget during a long ALE calculation.
-      while (length(entries) > 8L ||
-             (length(entries) > 1L && sum(vapply(
+      # Compact pre-gather pi/nu keys let repeated functionals reuse every
+      # prediction chunk. The element budget, rather than a small entry cap,
+      # remains the binding memory safeguard.
+      bank_elements <- length(gamma_key) + length(component_key)
+      while (length(entries) > 64L ||
+             (length(entries) > 1L && bank_elements + sum(vapply(
                entries,
                function(entry) {
-                 length(entry$nu) + length(entry$gamma_u) +
+                 length(entry$expanded_nu) +
+                   .cache_key_elements_mst_pmdn(entry$cache_key) +
                    length(entry$chi2)
                },
                integer(1)
@@ -249,11 +294,20 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   mu_s <- mu$gather(2L, idx_d)
   chol_s <- scale_chol$gather(2L, idx_dd)
   nu_s <- nu$gather(2L, idx)
+  gamma_cache_key <- list(
+    dim = c(B, S),
+    pi_dim = as.integer(pi$size()),
+    nu_dim = as.integer(nu$size()),
+    pi = as.numeric(torch::as_array(pi$to(device = "cpu"))),
+    nu = as.numeric(torch::as_array(nu$to(device = "cpu")))
+  )
   W <- .gamma_scale_from_uniform_mst_pmdn(
     nu_s,
     latent_draws$gamma_u,
     device = device,
-    cache = latent_draws$.cache
+    cache = latent_draws$.cache,
+    cache_key = gamma_cache_key,
+    component_u = latent_draws$component_u
   )$unsqueeze(3L)
 
   z1 <- latent_draws$skew_z$unsqueeze(1L)$expand(c(B, S, d))

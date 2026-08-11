@@ -25,6 +25,41 @@
   isTRUE(torch_equal(x$to(device = "cpu"), y$to(device = "cpu")))
 }
 
+.tensor_all_zero_mst_pmdn <- function(x) {
+  isTRUE((x == 0)$all()$item())
+}
+
+.effectively_symmetric_mst_pmdn <- function(pred, name) {
+  .validate_skew_none(pred, name) || .tensor_all_zero_mst_pmdn(pred$alpha)
+}
+
+.max_abs_tensor_change_mst_pmdn <- function(from, to, inverse = FALSE) {
+  from <- as.numeric(torch::as_array(from$to(device = "cpu")))
+  to <- as.numeric(torch::as_array(to$to(device = "cpu")))
+  if (isTRUE(inverse)) {
+    from <- 1 / from
+    to <- 1 / to
+  }
+  .max_abs_finite_mst_pmdn(to - from)
+}
+
+.channel_change_magnitudes_mst_pmdn <- function(pred_from, pred_to) {
+  c(
+    location = .max_abs_tensor_change_mst_pmdn(
+      pred_from$mu, pred_to$mu
+    ),
+    scale = .max_abs_tensor_change_mst_pmdn(
+      pred_from$scale_chol, pred_to$scale_chol
+    ),
+    skewness = .max_abs_tensor_change_mst_pmdn(
+      pred_from$alpha, pred_to$alpha
+    ),
+    df = .max_abs_tensor_change_mst_pmdn(
+      pred_from$nu, pred_to$nu, inverse = TRUE
+    )
+  )
+}
+
 .channel_is_active_mst_pmdn <- function(channel, pred_from, pred_to) {
   switch(
     channel,
@@ -33,10 +68,14 @@
       pred_from$scale_chol, pred_to$scale_chol
     ),
     skewness = {
-      from_none <- .validate_skew_none(pred_from, "pred_from")
-      to_none <- .validate_skew_none(pred_to, "pred_to")
-      !(from_none && to_none) &&
-        (!identical(from_none, to_none) ||
+      from_symmetric <- .effectively_symmetric_mst_pmdn(
+        pred_from, "pred_from"
+      )
+      to_symmetric <- .effectively_symmetric_mst_pmdn(
+        pred_to, "pred_to"
+      )
+      !(from_symmetric && to_symmetric) &&
+        (!identical(from_symmetric, to_symmetric) ||
          !.tensor_equal_mst_pmdn(pred_from$alpha, pred_to$alpha))
     },
     df = !.tensor_equal_mst_pmdn(pred_from$nu, pred_to$nu),
@@ -99,7 +138,8 @@ decompose_mst_pmdn <- function(pred_from,
                                seed = NULL,
                                chunk_size = NULL,
                                device = "cpu",
-                               response_names = NULL) {
+                               response_names = NULL,
+                               min_tail_draws = 20L) {
   from_info <- .validate_prediction_mst_pmdn(pred_from, "pred_from")
   to_info <- .validate_prediction_mst_pmdn(pred_to, "pred_to")
   if (!identical(from_info, to_info)) {
@@ -120,6 +160,7 @@ decompose_mst_pmdn <- function(pred_from,
     pred_to = pred_to
   )]
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
   latent_draws <- .ensure_latent_bank_mst_pmdn(
     pred_from, functional, latent_draws, num_samples, seed, device
   )
@@ -143,7 +184,8 @@ decompose_mst_pmdn <- function(pred_from,
       latent_draws,
       chunk_size,
       device,
-      response_names
+      response_names,
+      min_tail_draws
     )
     state_values[state + 1L, ] <- result$data$value
     state_results[[state + 1L]] <- result$diagnostics
@@ -177,10 +219,11 @@ decompose_mst_pmdn <- function(pred_from,
   to_value <- state_values[n_states, ]
   total <- to_value - from_value
   residual <- total - rowSums(contributions)
-  state_tail_resolution <- vapply(
-    state_results,
-    function(x) x$min_expected_tail_draws,
-    numeric(1)
+  tail_summary <- .tail_resolution_summary_mst_pmdn(
+    state_results, min_tail_draws
+  )
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "decompose_mst_pmdn()"
   )
   data <- data.frame(
     row = seq_len(from_info$batch_size),
@@ -204,14 +247,18 @@ decompose_mst_pmdn <- function(pred_from,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,
-      device = device
+      device = device,
+      min_tail_draws = min_tail_draws
     ),
-    diagnostics = list(
-      max_abs_sum_to_total_residual = .max_abs_finite_mst_pmdn(residual),
-      min_expected_tail_draws = .min_finite_mst_pmdn(
-        state_tail_resolution
+    diagnostics = c(
+      list(
+        max_abs_sum_to_total_residual =
+          .max_abs_finite_mst_pmdn(residual),
+        parameter_change_magnitudes =
+          .channel_change_magnitudes_mst_pmdn(pred_from, pred_to),
+        state = state_results
       ),
-      state = state_results
+      tail_summary
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )

@@ -27,6 +27,7 @@
     alpha = torch_index_select(pred$alpha, 2L, index_for(pred$alpha)),
     skew_none = .validate_skew_none(pred, "pred")
   )
+  attr(out, "response_names") <- attr(pred, "response_names")
   out
 }
 
@@ -69,7 +70,8 @@ tail_components_mst_pmdn <- function(pred,
       latent_draws,
       chunk_size,
       device,
-      response_names
+      response_names,
+      min_tail_draws
     )
     component_probability[, component] <- result$data$value
     component_diagnostics[[component]] <- result$diagnostics
@@ -90,19 +92,20 @@ tail_components_mst_pmdn <- function(pred,
   }
   expected_tail_draws <- num_samples * pmin(total, 1 - total)
   low_resolution <- expected_tail_draws < min_tail_draws
-  if (any(low_resolution)) {
-    warning(
-      sprintf(
-        paste0(
-          "Mixture exceedance resolution is below %d expected draws for %d ",
-          "prediction row(s)."
-        ),
-        min_tail_draws,
-        sum(low_resolution)
-      ),
-      call. = FALSE
-    )
-  }
+  total_diagnostics <- list(
+    min_expected_tail_draws =
+      .min_finite_mst_pmdn(expected_tail_draws),
+    low_tail_resolution_count = sum(low_resolution),
+    tail_resolution_evaluations = 1L,
+    low_tail_resolution_evaluations = as.integer(any(low_resolution))
+  )
+  tail_summary <- .tail_resolution_summary_mst_pmdn(
+    c(component_diagnostics, list(total_diagnostics)),
+    min_tail_draws
+  )
+  .warn_tail_resolution_mst_pmdn(
+    tail_summary, "tail_components_mst_pmdn()"
+  )
 
   data <- do.call(rbind, lapply(seq_len(info$batch_size), function(row) {
     data.frame(
@@ -128,12 +131,12 @@ tail_components_mst_pmdn <- function(pred,
       device = device,
       min_tail_draws = min_tail_draws
     ),
-    diagnostics = list(
-      component = component_diagnostics,
-      low_tail_resolution_rows = which(low_resolution),
-      min_expected_tail_draws = .min_finite_mst_pmdn(
-        expected_tail_draws
-      )
+    diagnostics = c(
+      list(
+        component = component_diagnostics,
+        low_tail_resolution_rows = which(low_resolution)
+      ),
+      tail_summary
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
