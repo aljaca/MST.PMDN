@@ -150,3 +150,24 @@ test_that("latent evaluation supports float32, float64, and conditional CUDA", {
   )
   expect_true(sampled$samples$device$type == "cuda")
 })
+
+test_that("exact-zero Gamma uniforms remain finite for floating dtypes", {
+  for (dtype in list(torch::torch_float(), torch::torch_double())) {
+    pred <- make_mdn_output(
+      pi = matrix(1, 1, 1),
+      mu = array(0, c(1, 1, 1)),
+      scale_chol = array(1, c(1, 1, 1, 1)),
+      nu = matrix(7, 1, 1),
+      alpha = array(0.4, c(1, 1, 1)),
+      dtype = dtype
+    )
+    bank <- latent_draws_mst_pmdn(
+      8L, output_dim = 1L, dtype = dtype, seed = 6
+    )
+    bank$gamma_u <- torch::torch_zeros(
+      c(8L, 1L), dtype = dtype
+    )
+    sampled <- MST.PMDN:::.sample_with_latent_mst_pmdn(pred, bank)
+    expect_true(torch::torch_isfinite(sampled$samples)$all()$item())
+  }
+})

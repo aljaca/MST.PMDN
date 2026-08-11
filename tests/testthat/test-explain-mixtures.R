@@ -41,3 +41,37 @@ test_that("tail-component rows retain one-based component identities", {
     tolerance = 1e-8
   )
 })
+
+test_that("tail components preserve prediction response names", {
+  pred <- make_mdn_output(
+    pi = matrix(1, 1, 1),
+    mu = array(c(0, 0), c(1, 1, 2)),
+    scale_chol = array(diag(2), c(1, 1, 2, 2)),
+    nu = matrix(Inf, 1, 1),
+    alpha = array(0, c(1, 1, 2)),
+    skew_none = TRUE
+  )
+  attr(pred, "response_names") <- c("wave", "surge")
+  bank <- latent_draws_mst_pmdn(256L, output_dim = 2L, seed = 43)
+
+  named <- suppressWarnings(tail_components_mst_pmdn(
+    pred,
+    response = "surge",
+    threshold = 0,
+    latent_draws = bank,
+    min_tail_draws = 1L
+  ))
+  indexed <- suppressWarnings(tail_components_mst_pmdn(
+    pred,
+    response = 2L,
+    threshold = 0,
+    latent_draws = bank,
+    min_tail_draws = 1L
+  ))
+
+  expect_equal(
+    named$data$component_probability,
+    indexed$data$component_probability,
+    tolerance = 0
+  )
+})

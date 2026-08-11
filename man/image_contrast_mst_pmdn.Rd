@@ -21,7 +21,8 @@ image_contrast_mst_pmdn(
   seed = NULL,
   chunk_size = NULL,
   device = "cpu",
-  response_names = NULL
+  response_names = NULL,
+  min_tail_draws = 20L
 )
 }
 \arguments{
@@ -44,6 +45,7 @@ image_contrast_mst_pmdn(
   \item{chunk_size}{Optional prediction and functional case chunk size.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional prediction response names.}
+  \item{min_tail_draws}{Positive warning threshold for expected tail draws.}
 }
 \details{
 The contrast is the functional under the observed image minus the functional
@@ -52,7 +54,9 @@ rebuild deterministic channels such as pressure gradients and apply the
 original preprocessing before either image is evaluated. Reference fields are
 coerced to the input image representation, dtype, and device before masking.
 All callback evaluations must return mutually compatible model-ready images
-with the same shape, representation, dtype, and device.
+with the same shape, representation, dtype, and device. Monte Carlo
+diagnostics from both endpoints, or all Shapley hybrids, are summarized once
+per public call.
 }
 \value{
 An \code{mst_pmdn_image_contrast} object with case contrasts, settings, and

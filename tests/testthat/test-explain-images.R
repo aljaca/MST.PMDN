@@ -128,6 +128,12 @@ test_that("image occlusion can return single-component channel maps", {
   expect_equal(result$data$channel_location, result$data$effect,
                tolerance = 1e-6)
   expect_equal(result$data$sum_to_total_residual, 0, tolerance = 1e-10)
+  expect_true(result$settings$reused_original_endpoint)
+  expect_true(all(vapply(
+    result$diagnostics$occluded,
+    function(x) x$reused_to_endpoint,
+    logical(1)
+  )))
 })
 
 test_that("finite skewed mixture occlusion reaches complete functional sampling", {
@@ -201,4 +207,108 @@ test_that("image decomposition rejects mixtures before patch evaluation", {
     ),
     "only available for M = 1"
   )
+})
+
+test_that("grouped occlusion works for array and tensor image inputs", {
+  for (as_tensor in c(FALSE, TRUE)) {
+    x <- matrix(0, nrow = 1, ncol = 1)
+    image <- array(0, c(1, 3, 2, 2))
+    image[, 1L, , ] <- 1
+    image[, 2L, , ] <- 2
+    image[, 3L, , ] <- 3
+    reference <- array(0, c(1, 3, 2, 2))
+    if (as_tensor) {
+      image <- torch::torch_tensor(image)
+      reference <- torch::torch_tensor(reference)
+    }
+    result <- image_occlusion_mst_pmdn(
+      explanation_test_model(slope = 0, image_channel = 2L),
+      x,
+      image,
+      reference,
+      mst_functional("mean", 1L),
+      patch_size = c(2L, 2L),
+      stride = c(1L, 1L),
+      taper = "none",
+      channel_groups = list(psl = 1L, uas = 2L, vas = 3L)
+    )
+    effect <- setNames(result$data$effect, result$data$group)
+    expect_equal(effect[c("psl", "uas", "vas")],
+               c(psl = 0, uas = 2, vas = 0),
+                 tolerance = 1e-6)
+  }
+})
+
+test_that("cosine occlusion reports mask weight and weighted coverage", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image <- array(1, c(1, 1, 4, 4))
+  reference <- array(0, c(1, 1, 4, 4))
+  result <- image_occlusion_mst_pmdn(
+    explanation_test_model(slope = 0, image_channel = 1L),
+    x,
+    image,
+    reference,
+    mst_functional("mean", 1L),
+    patch_size = c(4L, 4L),
+    stride = c(4L, 4L),
+    taper = "cosine"
+  )
+  window <- outer(
+    sin(pi * (seq_len(4L) - 0.5) / 4L),
+    sin(pi * (seq_len(4L) - 0.5) / 4L)
+  )
+  expect_equal(result$patches$mask_sum, sum(window), tolerance = 1e-12)
+  expect_equal(result$patches$mask_mean, mean(window), tolerance = 1e-12)
+  expect_equal(result$patches$mask_max, max(window), tolerance = 1e-12)
+  expect_equal(result$weighted_coverage, window, tolerance = 1e-12)
+  expect_true(all(result$coverage == 1))
+})
+
+test_that("image XAI entry points each aggregate tail warnings once", {
+  x <- cbind(feature = c(-0.25, 0.5), other = 0)
+  image <- array(c(1, 2), c(2, 1, 1, 1))
+  reference <- array(0, c(1, 1, 1, 1))
+  model <- distribution_explanation_test_model(n_mixtures = 1L)
+  functional <- mst_functional(
+    "joint_exceedance",
+    c(1L, 2L),
+    threshold = c(1e30, 1e30)
+  )
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 2L, seed = 74)
+  calls <- list(
+    contrast = function() image_contrast_mst_pmdn(
+      model,
+      x,
+      image,
+      reference,
+      functional,
+      latent_draws = bank,
+      min_tail_draws = 20L
+    ),
+    occlusion = function() image_occlusion_mst_pmdn(
+      model,
+      x,
+      image,
+      reference,
+      functional,
+      patch_size = c(1L, 1L),
+      stride = c(1L, 1L),
+      taper = "none",
+      latent_draws = bank,
+      min_tail_draws = 20L
+    )
+  )
+  for (name in names(calls)) {
+    warning_count <- 0L
+    result <- withCallingHandlers(
+      calls[[name]](),
+      mst_pmdn_tail_resolution_warning = function(condition) {
+        warning_count <<- warning_count + 1L
+        invokeRestart("muffleWarning")
+      }
+    )
+    expect_equal(warning_count, 1L, info = name)
+    expect_equal(result$diagnostics$min_expected_tail_draws, 0)
+    expect_gt(result$diagnostics$low_tail_resolution_evaluations, 0)
+  }
 })

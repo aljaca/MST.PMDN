@@ -152,10 +152,22 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     to(dtype = torch_long())
 }
 
+.next_gamma_cache_scope_mst_pmdn <- function(cache) {
+  if (!is.environment(cache)) return(NULL)
+  counter <- if (is.null(cache$gamma_cache_scope_counter)) {
+    1L
+  } else {
+    cache$gamma_cache_scope_counter + 1L
+  }
+  cache$gamma_cache_scope_counter <- counter
+  paste0("decompose_", counter)
+}
+
 .gamma_scale_from_uniform_mst_pmdn <- function(nu,
                                                 gamma_u,
                                                 device,
-                                                cache = NULL) {
+                                                cache = NULL,
+                                                cache_key = NULL) {
   B <- nu$size(1)
   S <- nu$size(2)
   normal <- nu == Inf
@@ -163,24 +175,39 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     return(torch_ones_like(nu))
   }
 
-  nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
-  nu_key <- as.numeric(torch::as_array(nu$to(device = "cpu")))
-  gamma_key <- as.numeric(torch::as_array(gamma_u$to(device = "cpu")))
-  gamma_key <- pmin(
-    pmax(gamma_key, .Machine$double.xmin),
-    1 - .Machine$double.eps
-  )
   entries <- if (is.environment(cache) &&
                  is.list(cache$gamma_scale_entries)) {
     cache$gamma_scale_entries
   } else {
     list()
   }
-  hit <- which(vapply(entries, function(entry) {
-    identical(entry$dim, c(B, S)) &&
-      identical(entry$nu, nu_key) &&
-      identical(entry$gamma_u, gamma_key)
-  }, logical(1)))[1L]
+  nu_key <- NULL
+  gamma_key <- NULL
+  if (is.null(cache_key)) {
+    nu_key <- as.numeric(torch::as_array(nu$to(device = "cpu")))
+    gamma_key <- as.numeric(torch::as_array(gamma_u$to(device = "cpu")))
+    half_quantum <- if (gamma_u$dtype == torch_float()) {
+      2^-25
+    } else {
+      2^-54
+    }
+    gamma_key <- pmin(
+      pmax(gamma_key, half_quantum),
+      1 - half_quantum
+    )
+    hit <- which(vapply(entries, function(entry) {
+      is.null(entry$cache_key) &&
+        identical(entry$dim, c(B, S)) &&
+        identical(entry$nu, nu_key) &&
+        identical(entry$gamma_u, gamma_key)
+    }, logical(1)))[1L]
+  } else {
+    cache_key <- as.character(cache_key)[1L]
+    hit <- which(vapply(entries, function(entry) {
+      identical(entry$cache_key, cache_key) &&
+        identical(entry$dim, c(B, S))
+    }, logical(1)))[1L]
+  }
 
   if (length(hit) && !is.na(hit)) {
     chi2_r <- entries[[hit]]$chi2
@@ -190,19 +217,37 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
       cache$gamma_scale_hits + 1L
     }
   } else {
+    if (is.null(gamma_key)) {
+      gamma_key <- as.numeric(torch::as_array(
+        gamma_u$to(device = "cpu")
+      ))
+      half_quantum <- if (gamma_u$dtype == torch_float()) {
+        2^-25
+      } else {
+        2^-54
+      }
+      gamma_key <- pmin(
+        pmax(gamma_key, half_quantum),
+        1 - half_quantum
+      )
+    }
+    nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
     u_r <- rep(gamma_key, each = B)
     nu_r <- as.numeric(torch::as_array(nu_safe$to(device = "cpu")))
     chi2_r <- stats::qgamma(u_r, shape = nu_r / 2, scale = 2)
     if (is.environment(cache)) {
-      entries[[length(entries) + 1L]] <- list(
+      entry <- list(
+        cache_key = cache_key,
         dim = c(B, S),
-        nu = nu_key,
-        gamma_u = gamma_key,
         chi2 = chi2_r
       )
-      # Shapley evaluation repeatedly visits only a few df states. Bound both
-      # entry count and all retained numeric elements so caching cannot defeat
-      # the functional evaluator's memory budget during a long ALE calculation.
+      if (is.null(cache_key)) {
+        entry$nu <- nu_key
+        entry$gamma_u <- gamma_key
+      }
+      entries[[length(entries) + 1L]] <- entry
+      # Shapley evaluation repeatedly visits only a few df states within each
+      # row chunk. Bound both entry count and retained numeric elements.
       while (length(entries) > 8L ||
              (length(entries) > 1L && sum(vapply(
                entries,
@@ -227,6 +272,7 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     dtype = nu$dtype,
     device = device
   )
+  nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
   finite_scale <- torch_sqrt(nu_safe / chi2$clamp(min = 1e-30))
   torch_where(normal, torch_ones_like(finite_scale), finite_scale)
 }
@@ -253,7 +299,8 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
     nu_s,
     latent_draws$gamma_u,
     device = device,
-    cache = latent_draws$.cache
+    cache = latent_draws$.cache,
+    cache_key = pred$.gamma_cache_key
   )$unsqueeze(3L)
 
   z1 <- latent_draws$skew_z$unsqueeze(1L)$expand(c(B, S, d))

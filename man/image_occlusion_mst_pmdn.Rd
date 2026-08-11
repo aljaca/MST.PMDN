@@ -21,13 +21,14 @@ image_occlusion_mst_pmdn(
   seed = NULL,
   chunk_size = NULL,
   device = "cpu",
-  response_names = NULL
+  response_names = NULL,
+  min_tail_draws = 20L
 )
 }
 \arguments{
   \item{model,inputs,image_inputs,reference_images,functional,cases,
   rebuild_channels,decompose,channels,num_samples,latent_draws,seed,chunk_size,
-  device,response_names}{As in \code{\link{image_contrast_mst_pmdn}}.}
+  device,response_names,min_tail_draws}{As in \code{\link{image_contrast_mst_pmdn}}.}
   \item{patch_size}{Two positive integers giving patch rows and columns. This
   is required because a scientifically appropriate spatial scale is
   application dependent.}
@@ -35,7 +36,9 @@ image_occlusion_mst_pmdn(
   required because runtime and overlap are application dependent.}
   \item{taper}{Cosine-tapered or untapered patch replacement.}
   \item{channel_groups}{\code{NULL} to perturb all channels together, a vector
-  of R 1-based channel indices, or a named list of such groups.}
+  of R 1-based channel indices, or a named list of such groups. With
+  \code{rebuild_channels}, masks have shape \code{[B, 1, H, W]} when this is
+  \code{NULL} and \code{[B, C, H, W]} when channels are grouped.}
 }
 \description{
 Replaces tapered spatial patches by a reference field and reports original
@@ -44,15 +47,19 @@ minus occluded changes in a scalar predictive functional.
 \value{
 An object of class \code{mst_pmdn_image_occlusion}. It contains case-level
 patch effects, population mean signed effect, mean absolute effect, positive-
-effect frequency, patch geometry, spatial coverage, optional one-component
-parameter-channel maps, and numerical closure residuals.
+effect frequency, patch geometry and mask weights, binary and weighted spatial
+coverage, optional one-component parameter-channel maps, and numerical closure
+residuals.
 }
 \details{
 The callback can perturb a scientifically fundamental field, recompute linked
 channels such as pressure gradients, apply original preprocessing, and return
 the complete model-ready tensor. Rebuilt original and occluded states must
-have matching shapes, representations, dtypes, and devices. Overlapping patch
-effects are spatial sensitivity measures: parameter channels sum within each
+have matching shapes, representations, dtypes, and devices. A cosine taper
+never fully replaces every pixel and its mean weight depends slightly on patch
+size; raw effects are therefore not normalized by mask weight. The returned
+\code{mask_sum}, \code{mask_mean}, and \code{mask_max} make that strength
+explicit. Overlapping patch effects are spatial sensitivity measures: parameter channels sum within each
 patch, but effects generally do not sum across patches to the whole-image
 contrast.
 }

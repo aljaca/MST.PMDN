@@ -49,13 +49,16 @@ test_that("ALE tail diagnostics use evaluated event probabilities", {
     "exceedance", 1L, threshold = 10, direction = "upper"
   )
   bank <- latent_draws_mst_pmdn(128L, output_dim = 1L, seed = 22)
-  result <- ale_mst_pmdn(
-    model,
-    x,
-    1L,
-    functional,
-    n_bins = 5L,
-    latent_draws = bank
+  expect_warning(
+    result <- ale_mst_pmdn(
+      model,
+      x,
+      1L,
+      functional,
+      n_bins = 5L,
+      latent_draws = bank
+    ),
+    "ALE tail resolution"
   )
   expect_equal(result$diagnostics$min_expected_tail_draws, 0)
   expect_equal(
@@ -253,4 +256,67 @@ test_that("channel-specific ALE closes to the total effect", {
     rep(0, nrow(result$data)),
     tolerance = 1e-7
   )
+})
+
+test_that("ICE accepts explicit one-based case indices", {
+  x <- cbind(feature = seq(-1, 1, length.out = 9), other = 0)
+  result <- ice_mst_pmdn(
+    explanation_test_model(slope = 2),
+    x,
+    feature = 1L,
+    functional = mst_functional("mean", 1L),
+    grid = c(-1, 0, 1),
+    cases = c(9L, 2L, 5L),
+    ale = FALSE
+  )
+  expect_identical(result$cases, c(9L, 2L, 5L))
+  expect_identical(unique(result$curves$case), c(9L, 2L, 5L))
+  expect_identical(result$settings$case_selection, "explicit")
+})
+
+test_that("ALE and nested ICE each aggregate tail warnings once", {
+  x <- cbind(feature = seq(-1, 1, length.out = 6), other = 0)
+  model <- distribution_explanation_test_model(n_mixtures = 1L)
+  functional <- mst_functional(
+    "joint_exceedance",
+    c(1L, 2L),
+    threshold = c(1e30, 1e30)
+  )
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 2L, seed = 63)
+  calls <- list(
+    ALE = function() ale_mst_pmdn(
+      model,
+      x,
+      feature = 1L,
+      functional = functional,
+      n_bins = 2L,
+      latent_draws = bank,
+      min_tail_draws = 20L
+    ),
+    ICE = function() ice_mst_pmdn(
+      model,
+      x,
+      feature = 1L,
+      functional = functional,
+      grid = c(-1, 1),
+      n_curves = 2L,
+      ale = TRUE,
+      n_bins = 2L,
+      latent_draws = bank,
+      min_tail_draws = 20L
+    )
+  )
+  for (name in names(calls)) {
+    warning_count <- 0L
+    result <- withCallingHandlers(
+      calls[[name]](),
+      mst_pmdn_tail_resolution_warning = function(condition) {
+        warning_count <<- warning_count + 1L
+        invokeRestart("muffleWarning")
+      }
+    )
+    expect_equal(warning_count, 1L, info = name)
+    expect_equal(result$diagnostics$min_expected_tail_draws, 0)
+    expect_gt(result$diagnostics$low_tail_resolution_evaluations, 0)
+  }
 })
