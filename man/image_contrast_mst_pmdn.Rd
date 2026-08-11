@@ -21,7 +21,8 @@ image_contrast_mst_pmdn(
   seed = NULL,
   chunk_size = NULL,
   device = "cpu",
-  response_names = NULL
+  response_names = NULL,
+  min_tail_draws = 20L
 )
 }
 \arguments{
@@ -44,6 +45,8 @@ image_contrast_mst_pmdn(
   \item{chunk_size}{Optional prediction and functional case chunk size.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional prediction response names.}
+  \item{min_tail_draws}{Warning threshold for expected draws in an evaluated
+  tail. Internal functional warnings are aggregated into one warning.}
 }
 \details{
 The contrast is the functional under the observed image minus the functional

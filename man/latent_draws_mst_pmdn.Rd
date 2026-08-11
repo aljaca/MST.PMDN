@@ -34,7 +34,11 @@ component-selection error does not average away along an ALE curve. Functional
 tail-draw diagnostics describe the marginal event or quantile; mixture
 diagnostics separately report expected component draw counts.
 Finite-df evaluations may attach a bounded, mutable Gamma-quantile cache to the
-bank supplied by the caller. Public functional and explanation result objects
+bank supplied by the caller. Compact pre-gather mixture-weight and
+degrees-of-freedom keys permit chunk reuse across related functionals while a
+fixed retained-element budget bounds memory. Endpoint uniforms are clamped at
+dtype-appropriate half-quantum bounds before Gamma inversion. Public functional
+and explanation result objects
 retain the latent tensors needed for exact reproduction but omit this cache, so
 serializing a result does not retain cached chi-square arrays.
 }

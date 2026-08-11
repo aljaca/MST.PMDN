@@ -31,7 +31,9 @@ tail_components_mst_pmdn(
   \item{chunk_size}{Optional case chunk size.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional prediction response names.}
-  \item{min_tail_draws}{Warning threshold for expected mixture-tail draws.}
+  \item{min_tail_draws}{Warning threshold for expected mixture and
+  within-component tail draws. Internal warnings are aggregated into one
+  classed summary warning.}
 }
 \details{
 For component \eqn{g}, the output reports \eqn{p_g=P_g(Y>u)}, weighted

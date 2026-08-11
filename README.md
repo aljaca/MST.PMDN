@@ -458,7 +458,7 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 *   **Purpose:** Define and evaluate one scalar scientific summary per prediction row.
 *   **Method:** Means, variances, standard deviations, covariance, and correlation use exact component and mixture moments, including between-component covariance. Quantiles, marginal and joint exceedances, tail spread, and normalized generalized Bowley tail asymmetry use a parameter-independent latent bank created by `latent_draws_mst_pmdn()`.
-*   **Diagnostics:** Tail summaries report the expected number of Monte Carlo draws in the relevant tail and flag inadequate resolution. Mixture results separately retain expected component draw counts; because component uniforms are shared across rows, component-selection Monte Carlo error does not average away along an effect curve. Exact moments return undefined values when finite degrees of freedom do not support them.
+*   **Diagnostics:** Tail summaries report the expected number of Monte Carlo draws in the relevant tail and flag inadequate resolution. Every public interpretation call aggregates its internal evaluations and emits at most one classed tail-resolution warning; the per-evaluation distribution remains available in diagnostics. Mixture results separately retain expected component draw counts; because component uniforms are shared across rows, component-selection Monte Carlo error does not average away along an effect curve. Exact moments return undefined values when finite degrees of freedom do not support them.
 
 #### Functions: `ale_mst_pmdn(...)` and `ice_mst_pmdn(...)`
 
@@ -469,13 +469,14 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 #### Functions: `image_contrast_mst_pmdn(...)` and `image_occlusion_mst_pmdn(...)`
 
 *   **Purpose:** Measure whole-image and spatial patch effects on the same scalar functionals used by the tabular layer.
-*   **Method:** Observed image regions are replaced by a required reference field, optionally with cosine tapering and overlapping patches. When an input channel is deterministically derived from another, a `rebuild_channels` callback should perturb the fundamental physical field, recompute every linked channel such as a pressure gradient, apply the original preprocessing, and return a complete model-ready tensor.
-*   **Interpretation:** Patch effects are spatial sensitivity measures. They do not generally add across overlapping patches to the whole-image contrast.
+*   **Method:** Observed image regions are replaced by a required reference field, optionally with cosine tapering and overlapping patches. Named `channel_groups` can attribute fields separately; `NULL` retains a joint synoptic-state perturbation. When an input channel is deterministically derived from another, a `rebuild_channels` callback should perturb the fundamental physical field, recompute every linked channel such as a pressure gradient, apply the original preprocessing, and return a complete model-ready tensor. Callback masks have one channel for a joint perturbation and the full model channel count under grouping.
+*   **Monte Carlo stability:** `image_occlusion_mst_pmdn()` accepts multiple independent latent banks, computes every CNN prediction once, and repeats only functional sampling. It returns bank-specific effects, their spread, and a strict same-sign indicator. The indicator is a sign-stability heuristic rather than a confidence interval.
+*   **Interpretation:** Patch effects are spatial sensitivity measures. Cosine taper weights are reported as metadata but do not define a linear normalization through the nonlinear network and functional. Raw effects are retained, and they do not generally add across overlapping patches to the whole-image contrast.
 
 #### Function: `decompose_mst_pmdn(...)`
 
 *   **Purpose:** For one-component models, allocate a known functional contrast among location, complete scale, skewness, and degrees-of-freedom channels.
-*   **Method:** Exact Shapley averaging evaluates all hybrid parameter states—16 when all four channels are active—and reports the numerical sum-to-total residual. Structurally inactive or unchanged channels disappear automatically. The complete Cholesky factor is the scale block; because it maps standardized skew direction into response space, its contribution includes the induced rotation of that direction.
+*   **Method:** Exact Shapley averaging evaluates all hybrid parameter states—16 when all four channels are active—and reports the numerical sum-to-total residual. Structurally inactive or exactly unchanged channels disappear automatically; structural symmetry and an exactly zero skew vector are treated as the same endpoint. Diagnostics report the maximum location, Cholesky-factor, skew-vector, and inverse-df change. The complete Cholesky factor is the scale block; because it maps standardized skew direction into response space, its contribution includes the induced rotation of that direction.
 *   **Scope:** This is parameter-channel attribution rather than feature SHAP. Full channel decomposition is disabled for mixtures because component labels and compensating component changes are not identified.
 
 #### Function: `tail_components_mst_pmdn(...)`

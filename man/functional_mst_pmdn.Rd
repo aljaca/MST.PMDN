@@ -53,5 +53,7 @@ Tail asymmetry is normalized by its selected interquantile spread and is thus
 dimensionless. Common component uniforms deliberately correlate Monte Carlo
 error across prediction rows. Expected tail draws diagnose only the complete
 marginal functional; expected component draw counts are retained separately for
-mixtures.
+mixtures. Low-resolution results emit a classed
+\code{mst_pmdn_tail_resolution_warning}; the numerical values and diagnostics
+are still returned.
 }
