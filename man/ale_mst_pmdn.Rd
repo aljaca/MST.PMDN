@@ -42,7 +42,9 @@ ale_mst_pmdn(
   \item{chunk_size}{Optional prediction and functional case chunk size.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional prediction response names.}
-  \item{min_tail_draws}{Positive warning threshold for expected tail draws.}
+  \item{min_tail_draws}{Warning threshold for expected draws in an evaluated
+  tail. Internal endpoint and hybrid warnings are aggregated into one warning
+  from this call.}
 }
 \details{
 ALE replaces a feature by its lower and upper empirical-bin boundaries only
@@ -52,10 +54,9 @@ centred. The midpoint value subtracts half of the current bin effect, a
 within-bin linear interpolation convention rather than the boundary-valued
 definition in Apley and Zhu. This makes ALE the preferred population summary
 when meteorological predictors are correlated. For Monte Carlo functionals,
-diagnostics report the minimum expected tail-draw count actually encountered at
-the evaluated bin endpoints or hybrid parameter states. Internal warnings are
-aggregated into one classed tail-resolution warning per ALE call when the
-minimum falls below \code{min_tail_draws}.
+diagnostics report the distribution of expected tail-draw counts encountered
+at evaluated bin endpoints or hybrid parameter states. One classed summary
+warning is emitted when any evaluation falls below \code{min_tail_draws}.
 }
 \value{
 An \code{mst_pmdn_ale} object with \code{data}, breaks, settings, and

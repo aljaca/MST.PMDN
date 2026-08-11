@@ -11,7 +11,6 @@ ice_mst_pmdn(
   grid = NULL,
   reference = NULL,
   n_curves = 100L,
-  cases = NULL,
   ale = TRUE,
   n_bins = 20L,
   num_samples = 4096L,
@@ -20,6 +19,7 @@ ice_mst_pmdn(
   chunk_size = NULL,
   device = "cpu",
   response_names = NULL,
+  cases = NULL,
   min_tail_draws = 20L
 )
 }
@@ -33,8 +33,8 @@ ice_mst_pmdn(
   is the empirical median.}
   \item{n_curves}{Maximum number of systematically spaced input cases when
   \code{cases} is \code{NULL}.}
-  \item{cases}{Optional explicit R 1-based case indices. These preserve their
-  supplied order and take precedence over \code{n_curves}.}
+  \item{cases}{Optional explicit R 1-based case indices. When supplied,
+  \code{n_curves} is ignored.}
   \item{ale}{\code{TRUE} to compute an ALE overlay using all input rows,
   \code{FALSE} or \code{NULL} to omit it, or a matching precomputed
   \code{mst_pmdn_ale} object.}
@@ -48,12 +48,12 @@ An object of class \code{mst_pmdn_ice} with a plain \code{curves} data frame
 and an optional \code{mst_pmdn_ale} object.
 }
 \details{
-The same latent bank is used at every grid point. Fixed-reference ICE is
+The same latent bank is used at every grid point. The default grid deliberately
+stays within the empirical 5th--95th percentile range to avoid emphasizing
+extreme predictor combinations; an explicit grid can include the endpoints.
+Fixed-reference ICE is
 intended to show effect heterogeneity and interactions; unlike ALE, it can
 construct predictor combinations with weak empirical support.
 The default overlay requires a separate full-data ALE calculation; it can be
-omitted or supplied precomputed when only selected ICE cases are needed. The
-5th--95th percentile default grid deliberately avoids unsupported extremes;
-supply \code{grid} explicitly for complete-range analysis. Monte Carlo
-diagnostics are aggregated into one tail-resolution warning per call.
+omitted or supplied precomputed when only selected ICE cases are needed.
 }

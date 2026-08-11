@@ -42,36 +42,43 @@ test_that("tail-component rows retain one-based component identities", {
   )
 })
 
-test_that("tail components preserve prediction response names", {
+
+test_that("tail-component accounting preserves prediction response names", {
+  scale_chol <- array(0, c(1, 2, 2, 2))
+  scale_chol[1, 1, , ] <- diag(2)
+  scale_chol[1, 2, , ] <- diag(2)
   pred <- make_mdn_output(
-    pi = matrix(1, 1, 1),
-    mu = array(c(0, 0), c(1, 1, 2)),
-    scale_chol = array(diag(2), c(1, 1, 2, 2)),
-    nu = matrix(Inf, 1, 1),
-    alpha = array(0, c(1, 1, 2)),
+    pi = matrix(c(0.4, 0.6), 1, 2),
+    mu = array(c(-1, 0, 1, 2), c(1, 2, 2)),
+    scale_chol = scale_chol,
+    nu = matrix(Inf, 1, 2),
+    alpha = array(0, c(1, 2, 2)),
     skew_none = TRUE
   )
   attr(pred, "response_names") <- c("wave", "surge")
-  bank <- latent_draws_mst_pmdn(256L, output_dim = 2L, seed = 43)
 
-  named <- suppressWarnings(tail_components_mst_pmdn(
-    pred,
-    response = "surge",
-    threshold = 0,
-    latent_draws = bank,
-    min_tail_draws = 1L
-  ))
-  indexed <- suppressWarnings(tail_components_mst_pmdn(
+  expect_warning(
+    named <- tail_components_mst_pmdn(
+      pred,
+      response = "surge",
+      threshold = 1.5,
+      num_samples = 256L,
+      seed = 43,
+      min_tail_draws = 1L
+    ),
+    NA
+  )
+  explicit <- tail_components_mst_pmdn(
     pred,
     response = 2L,
-    threshold = 0,
-    latent_draws = bank,
+    threshold = 1.5,
+    num_samples = 256L,
+    seed = 43,
     min_tail_draws = 1L
-  ))
-
+  )
   expect_equal(
     named$data$component_probability,
-    indexed$data$component_probability,
+    explicit$data$component_probability,
     tolerance = 0
   )
 })

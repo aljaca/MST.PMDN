@@ -33,7 +33,8 @@ decompose_mst_pmdn(
   \item{chunk_size}{Optional case chunk size.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional prediction response names.}
-  \item{min_tail_draws}{Positive warning threshold for expected tail draws.}
+  \item{min_tail_draws}{Warning threshold for expected draws in an evaluated
+  tail. Hybrid-state warnings are aggregated into one warning.}
 }
 \details{
 Every hybrid prediction takes each selected parameter block from
@@ -45,16 +46,14 @@ direction in response space; the scale channel therefore includes that induced
 directional change as well as marginal scale and dependence. This is
 parameter-channel attribution, not feature SHAP.
 
-Unchanged channels, exact fixed degrees of freedom, and effective zero
-skewness disappear automatically; structural symmetry and an exactly zero
-numerical skew vector are treated identically. Diagnostics report maximum
-absolute endpoint changes in location, Cholesky scale, skewness, and inverse
-degrees of freedom. Hybrid states are evaluated within row chunks so repeated
-finite-df parents reuse their Gamma-quantile transforms. Full decomposition is rejected for mixtures
+Unchanged channels, exact fixed degrees of freedom, and effective symmetry
+(either structural zero skewness or exactly zero \eqn{\alpha}) disappear
+automatically. Diagnostics report maximum absolute endpoint changes in
+location, the Cholesky scale factor, \eqn{\alpha}, and inverse degrees of
+freedom. Full decomposition is rejected for mixtures
 because head labels and compensating component changes are not identified.
 }
 \value{
 An \code{mst_pmdn_decomposition} object containing a data frame of endpoints,
-total contrast, active-channel contributions, sum-to-total residual, parameter
-change magnitudes, and aggregated Monte Carlo diagnostics.
+total contrast, active-channel contributions, and sum-to-total residual.
 }

@@ -151,23 +151,63 @@ test_that("latent evaluation supports float32, float64, and conditional CUDA", {
   expect_true(sampled$samples$device$type == "cuda")
 })
 
-test_that("exact-zero Gamma uniforms remain finite for floating dtypes", {
-  for (dtype in list(torch::torch_float(), torch::torch_double())) {
-    pred <- make_mdn_output(
-      pi = matrix(1, 1, 1),
-      mu = array(0, c(1, 1, 1)),
-      scale_chol = array(1, c(1, 1, 1, 1)),
-      nu = matrix(7, 1, 1),
-      alpha = array(0.4, c(1, 1, 1)),
-      dtype = dtype
-    )
-    bank <- latent_draws_mst_pmdn(
-      8L, output_dim = 1L, dtype = dtype, seed = 6
-    )
-    bank$gamma_u <- torch::torch_zeros(
-      c(8L, 1L), dtype = dtype
-    )
-    sampled <- MST.PMDN:::.sample_with_latent_mst_pmdn(pred, bank)
-    expect_true(torch::torch_isfinite(sampled$samples)$all()$item())
-  }
+
+test_that("finite-df cache retains all chunks across related functionals", {
+  B <- 12L
+  pred <- make_mdn_output(
+    pi = matrix(1, B, 1),
+    mu = array(seq(-1, 1, length.out = B), c(B, 1, 1)),
+    scale_chol = array(1, c(B, 1, 1, 1)),
+    nu = matrix(seq(5, 16, length.out = B), B, 1),
+    alpha = array(0.2, c(B, 1, 1))
+  )
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 1L, seed = 102)
+
+  functional_mst_pmdn(
+    pred,
+    mst_functional("quantile", 1L, prob = 0.5),
+    latent_draws = bank,
+    chunk_size = 1L,
+    min_tail_draws = 1L
+  )
+  expect_equal(bank$.cache$gamma_scale_misses, B)
+  expect_null(bank$.cache$gamma_scale_hits)
+
+  functional_mst_pmdn(
+    pred,
+    mst_functional("exceedance", 1L, threshold = 0),
+    latent_draws = bank,
+    chunk_size = 1L,
+    min_tail_draws = 1L
+  )
+  expect_equal(bank$.cache$gamma_scale_misses, B)
+  expect_equal(bank$.cache$gamma_scale_hits, B)
+})
+
+test_that("float32 endpoint uniforms produce finite Student-t samples", {
+  pred <- make_mdn_output(
+    pi = matrix(1, 2, 1),
+    mu = array(0, c(2, 1, 1)),
+    scale_chol = array(1, c(2, 1, 1, 1)),
+    nu = matrix(c(5, 9), 2, 1),
+    alpha = array(0, c(2, 1, 1)),
+    skew_none = TRUE,
+    dtype = torch::torch_float()
+  )
+  bank <- latent_draws_mst_pmdn(
+    2L, output_dim = 1L, dtype = torch::torch_float(), seed = 103
+  )
+  bank$gamma_u <- torch::torch_tensor(
+    matrix(c(0, 1), ncol = 1L),
+    dtype = torch::torch_float()
+  )
+  sampled <- MST.PMDN:::.sample_with_latent_mst_pmdn(pred, bank)
+  expect_true(all(is.finite(torch::as_array(sampled$samples))))
+  expect_equal(
+    unname(MST.PMDN:::.uniform_probability_bounds_mst_pmdn(
+      torch::torch_float()
+    )["lower"]),
+    2^-25,
+    tolerance = 0
+  )
 })

@@ -30,8 +30,7 @@ functional_mst_pmdn(
   \item{response_names}{Optional names for prediction response dimensions.
   Used when \code{functional$responses} is character.}
   \item{min_tail_draws}{Warning threshold for the expected number of draws in
-  the relevant tail. Warnings have class
-  \code{mst_pmdn_tail_resolution_warning}.}
+  the relevant tail.}
 }
 \description{
 Evaluates one scalar per prediction row. Means, variances, standard deviations,
@@ -54,7 +53,7 @@ Tail asymmetry is normalized by its selected interquantile spread and is thus
 dimensionless. Common component uniforms deliberately correlate Monte Carlo
 error across prediction rows. Expected tail draws diagnose only the complete
 marginal functional; expected component draw counts are retained separately for
-mixtures. Higher-level ALE, ICE, decomposition, contrast, and occlusion calls
-muffle only this class internally and emit one aggregated warning while
-preserving unrelated warnings.
+mixtures. Low-resolution results emit a classed
+\code{mst_pmdn_tail_resolution_warning}; the numerical values and diagnostics
+are still returned.
 }

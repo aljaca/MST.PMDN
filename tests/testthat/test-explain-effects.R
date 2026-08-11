@@ -58,7 +58,7 @@ test_that("ALE tail diagnostics use evaluated event probabilities", {
       n_bins = 5L,
       latent_draws = bank
     ),
-    "ALE tail resolution"
+    class = "mst_pmdn_tail_resolution_warning"
   )
   expect_equal(result$diagnostics$min_expected_tail_draws, 0)
   expect_equal(
@@ -258,65 +258,60 @@ test_that("channel-specific ALE closes to the total effect", {
   )
 })
 
-test_that("ICE accepts explicit one-based case indices", {
-  x <- cbind(feature = seq(-1, 1, length.out = 9), other = 0)
+
+test_that("ICE accepts explicit one-based cases", {
+  x <- cbind(feature = seq(-1, 1, length.out = 10), other = 0)
   result <- ice_mst_pmdn(
     explanation_test_model(slope = 2),
     x,
     feature = 1L,
     functional = mst_functional("mean", 1L),
     grid = c(-1, 0, 1),
-    cases = c(9L, 2L, 5L),
+    cases = c(2L, 7L, 10L),
     ale = FALSE
   )
-  expect_identical(result$cases, c(9L, 2L, 5L))
-  expect_identical(unique(result$curves$case), c(9L, 2L, 5L))
+  expect_identical(result$cases, c(2L, 7L, 10L))
   expect_identical(result$settings$case_selection, "explicit")
+  expect_identical(unique(result$curves$case), c(2L, 7L, 10L))
+  expect_error(
+    ice_mst_pmdn(
+      explanation_test_model(),
+      x,
+      1L,
+      mst_functional("mean", 1L),
+      grid = c(-1, 1),
+      cases = 0L,
+      ale = FALSE
+    ),
+    "1-based"
+  )
 })
 
-test_that("ALE and nested ICE each aggregate tail warnings once", {
+test_that("ICE aggregates tail-resolution warnings across its evaluations", {
   x <- cbind(feature = seq(-1, 1, length.out = 6), other = 0)
-  model <- distribution_explanation_test_model(n_mixtures = 1L)
-  functional <- mst_functional(
-    "joint_exceedance",
-    c(1L, 2L),
-    threshold = c(1e30, 1e30)
-  )
-  bank <- latent_draws_mst_pmdn(64L, output_dim = 2L, seed = 63)
-  calls <- list(
-    ALE = function() ale_mst_pmdn(
-      model,
+  bank <- latent_draws_mst_pmdn(32L, output_dim = 1L, seed = 83)
+  warnings <- list()
+  result <- withCallingHandlers(
+    ice_mst_pmdn(
+      explanation_test_model(),
       x,
       feature = 1L,
-      functional = functional,
-      n_bins = 2L,
-      latent_draws = bank,
-      min_tail_draws = 20L
-    ),
-    ICE = function() ice_mst_pmdn(
-      model,
-      x,
-      feature = 1L,
-      functional = functional,
+      functional = mst_functional("exceedance", 1L, threshold = 100),
       grid = c(-1, 1),
-      n_curves = 2L,
-      ale = TRUE,
-      n_bins = 2L,
+      cases = c(1L, 6L),
+      ale = FALSE,
       latent_draws = bank,
-      min_tail_draws = 20L
-    )
+      min_tail_draws = 2L
+    ),
+    mst_pmdn_tail_resolution_warning = function(condition) {
+      warnings[[length(warnings) + 1L]] <<- condition
+      invokeRestart("muffleWarning")
+    }
   )
-  for (name in names(calls)) {
-    warning_count <- 0L
-    result <- withCallingHandlers(
-      calls[[name]](),
-      mst_pmdn_tail_resolution_warning = function(condition) {
-        warning_count <<- warning_count + 1L
-        invokeRestart("muffleWarning")
-      }
-    )
-    expect_equal(warning_count, 1L, info = name)
-    expect_equal(result$diagnostics$min_expected_tail_draws, 0)
-    expect_gt(result$diagnostics$low_tail_resolution_evaluations, 0)
-  }
+  expect_length(warnings, 1L)
+  expect_identical(result$diagnostics$tail_resolution_evaluations, 3L)
+  expect_identical(
+    result$diagnostics$low_tail_resolution_evaluations,
+    3L
+  )
 })

@@ -31,8 +31,9 @@ tail_components_mst_pmdn(
   \item{chunk_size}{Optional case chunk size.}
   \item{device}{Torch evaluation device.}
   \item{response_names}{Optional prediction response names.}
-  \item{min_tail_draws}{Warning threshold applied to complete-mixture and
-  within-component expected tail draws.}
+  \item{min_tail_draws}{Warning threshold for expected mixture and
+  within-component tail draws. Internal warnings are aggregated into one
+  classed summary warning.}
 }
 \details{
 For component \eqn{g}, the output reports \eqn{p_g=P_g(Y>u)}, weighted
@@ -42,8 +43,7 @@ contributions are invariant to component-label permutations. Quantiles have no
 corresponding additive component decomposition.
 Each component probability is evaluated directly and then weighted analytically
 by \eqn{\pi_g}; the calculation does not spend only \eqn{\pi_g} of the latent
-draws on a low-weight component. A single classed warning summarizes inadequate
-resolution across the complete mixture and all component evaluations.
+draws on a low-weight component.
 }
 \value{
 An \code{mst_pmdn_tail_components} object with one data-frame row per
