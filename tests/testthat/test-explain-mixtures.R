@@ -44,13 +44,13 @@ test_that("tail-component rows retain one-based component identities", {
 
 
 test_that("tail-component accounting preserves prediction response names", {
+  scale_chol <- array(0, c(1, 2, 2, 2))
+  scale_chol[1, 1, , ] <- diag(2)
+  scale_chol[1, 2, , ] <- diag(2)
   pred <- make_mdn_output(
     pi = matrix(c(0.4, 0.6), 1, 2),
     mu = array(c(-1, 0, 1, 2), c(1, 2, 2)),
-    scale_chol = array(
-      rep(diag(2), 2L),
-      c(1, 2, 2, 2)
-    ),
+    scale_chol = scale_chol,
     nu = matrix(Inf, 1, 2),
     alpha = array(0, c(1, 2, 2)),
     skew_none = TRUE
