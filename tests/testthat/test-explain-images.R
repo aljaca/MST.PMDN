@@ -233,7 +233,8 @@ test_that("grouped occlusion works for array and tensor image inputs", {
       channel_groups = list(psl = 1L, uas = 2L, vas = 3L)
     )
     effect <- setNames(result$data$effect, result$data$group)
-    expect_equal(effect[c("psl", "uas", "vas")], c(0, 2, 0),
+    expect_equal(effect[c("psl", "uas", "vas")],
+               c(psl = 0, uas = 2, vas = 0),
                  tolerance = 1e-6)
   }
 })

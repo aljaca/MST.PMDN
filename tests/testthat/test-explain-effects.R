@@ -49,13 +49,16 @@ test_that("ALE tail diagnostics use evaluated event probabilities", {
     "exceedance", 1L, threshold = 10, direction = "upper"
   )
   bank <- latent_draws_mst_pmdn(128L, output_dim = 1L, seed = 22)
-  result <- ale_mst_pmdn(
-    model,
-    x,
-    1L,
-    functional,
-    n_bins = 5L,
-    latent_draws = bank
+  expect_warning(
+    result <- ale_mst_pmdn(
+      model,
+      x,
+      1L,
+      functional,
+      n_bins = 5L,
+      latent_draws = bank
+    ),
+    "ALE tail resolution"
   )
   expect_equal(result$diagnostics$min_expected_tail_draws, 0)
   expect_equal(
