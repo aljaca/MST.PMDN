@@ -41,3 +41,44 @@ test_that("tail-component rows retain one-based component identities", {
     tolerance = 1e-8
   )
 })
+
+
+test_that("tail-component accounting preserves prediction response names", {
+  pred <- make_mdn_output(
+    pi = matrix(c(0.4, 0.6), 1, 2),
+    mu = array(c(-1, 0, 1, 2), c(1, 2, 2)),
+    scale_chol = array(
+      rep(diag(2), 2L),
+      c(1, 2, 2, 2)
+    ),
+    nu = matrix(Inf, 1, 2),
+    alpha = array(0, c(1, 2, 2)),
+    skew_none = TRUE
+  )
+  attr(pred, "response_names") <- c("wave", "surge")
+
+  expect_warning(
+    named <- tail_components_mst_pmdn(
+      pred,
+      response = "surge",
+      threshold = 0,
+      num_samples = 256L,
+      seed = 43,
+      min_tail_draws = 1L
+    ),
+    NA
+  )
+  explicit <- tail_components_mst_pmdn(
+    pred,
+    response = 2L,
+    threshold = 0,
+    num_samples = 256L,
+    seed = 43,
+    min_tail_draws = 1L
+  )
+  expect_equal(
+    named$data$component_probability,
+    explicit$data$component_probability,
+    tolerance = 0
+  )
+})

@@ -113,3 +113,45 @@ test_that("full parameter-channel decomposition rejects mixtures", {
     "only available for M = 1"
   )
 })
+
+
+test_that("structural and numerical symmetry are the same inactive endpoint", {
+  pair <- make_channel_pair(alpha_from = 0, alpha_to = 0)
+  pair$from$skew_none <- TRUE
+  pair$to$skew_none <- FALSE
+  result <- decompose_mst_pmdn(
+    pair$from,
+    pair$to,
+    mst_functional("mean", 1L)
+  )
+  expect_length(result$active_channels, 0L)
+  expect_equal(result$data$total, 0, tolerance = 0)
+  expect_equal(
+    result$diagnostics$parameter_change_magnitudes["skewness"],
+    0,
+    tolerance = 0
+  )
+})
+
+test_that("decomposition emits one classed tail-resolution summary", {
+  pair <- make_channel_pair(mu_to = 1, skew_none = TRUE)
+  bank <- latent_draws_mst_pmdn(32L, output_dim = 1L, seed = 82)
+  warnings <- list()
+  result <- withCallingHandlers(
+    decompose_mst_pmdn(
+      pair$from,
+      pair$to,
+      mst_functional("exceedance", 1L, threshold = 100),
+      latent_draws = bank,
+      min_tail_draws = 2L
+    ),
+    mst_pmdn_tail_resolution_warning = function(condition) {
+      warnings[[length(warnings) + 1L]] <<- condition
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_length(warnings, 1L)
+  expect_s3_class(warnings[[1L]], "mst_pmdn_tail_resolution_warning")
+  expect_equal(result$diagnostics$min_expected_tail_draws, 0)
+  expect_equal(result$diagnostics$parameter_change_magnitudes["location"], 1)
+})

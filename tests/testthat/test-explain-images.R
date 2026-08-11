@@ -202,3 +202,196 @@ test_that("image decomposition rejects mixtures before patch evaluation", {
     "only available for M = 1"
   )
 })
+
+
+test_that("occlusion reports taper strength and weighted coverage", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image <- array(1, c(1, 1, 4, 4))
+  reference <- array(0, c(1, 1, 4, 4))
+  result <- image_occlusion_mst_pmdn(
+    explanation_test_model(slope = 0, image_channel = 1L),
+    x,
+    image,
+    reference,
+    mst_functional("mean", 1L),
+    patch_size = c(2L, 2L),
+    stride = c(2L, 2L),
+    taper = "cosine"
+  )
+  expect_true(all(result$patches$mask_sum > 0))
+  expect_true(all(result$patches$mask_mean < 1))
+  expect_true(all(result$patches$mask_max < 1))
+  expect_equal(
+    sum(result$weighted_coverage),
+    sum(result$patches$mask_sum),
+    tolerance = 1e-12
+  )
+  expect_true(all(result$coverage == 1))
+})
+
+test_that("channel-group occlusion works for arrays and torch tensors", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image_array <- array(0, c(1, 2, 2, 2))
+  image_array[, 1L, , ] <- 1
+  image_array[, 2L, , ] <- 4
+  reference_array <- array(0, c(1, 2, 2, 2))
+  model <- explanation_test_model(slope = 0, image_channel = 2L)
+
+  for (tensor_input in c(FALSE, TRUE)) {
+    image <- if (tensor_input) {
+      torch::torch_tensor(image_array)
+    } else {
+      image_array
+    }
+    reference <- if (tensor_input) {
+      torch::torch_tensor(reference_array)
+    } else {
+      reference_array
+    }
+    result <- image_occlusion_mst_pmdn(
+      model,
+      x,
+      image,
+      reference,
+      mst_functional("mean", 1L),
+      patch_size = c(2L, 2L),
+      stride = c(2L, 2L),
+      taper = "none",
+      channel_groups = list(first = 1L, second = 2L)
+    )
+    expect_identical(result$data$group, c("first", "second"))
+    expect_equal(result$data$effect, c(0, 4), tolerance = 1e-6)
+  }
+})
+
+test_that("replicate occlusion reuses predictions and exposes bank spread", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image <- array(2, c(1, 1, 2, 2))
+  reference <- array(0, c(1, 1, 2, 2))
+  banks <- lapply(84:86, function(seed) {
+    latent_draws_mst_pmdn(64L, output_dim = 1L, seed = seed)
+  })
+  result <- image_occlusion_mst_pmdn(
+    explanation_test_model(slope = 0, image_channel = 1L),
+    x,
+    image,
+    reference,
+    mst_functional("exceedance", 1L, threshold = 1),
+    patch_size = c(2L, 2L),
+    stride = c(2L, 2L),
+    taper = "none",
+    latent_draws = banks,
+    min_tail_draws = 1L
+  )
+  expect_identical(result$settings$mc_replicates, 3L)
+  expect_equal(nrow(result$replicate_data), 3L)
+  expect_equal(
+    result$data$effect,
+    mean(result$replicate_data$effect),
+    tolerance = 0
+  )
+  expect_equal(
+    result$population$mc_mean_signed_effect_min,
+    min(result$population_replicate$mean_signed_effect),
+    tolerance = 0
+  )
+  expect_length(result$latent_draws, 3L)
+  expect_true(all(vapply(
+    result$latent_draws,
+    function(bank) !".cache" %in% names(bank),
+    logical(1)
+  )))
+})
+
+test_that("image entry points emit one classed resolution warning per call", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image <- array(1, c(1, 1, 1, 1))
+  reference <- array(0, c(1, 1, 1, 1))
+  model <- explanation_test_model(slope = 0, image_channel = 1L)
+  functional <- mst_functional("exceedance", 1L, threshold = 100)
+  bank <- latent_draws_mst_pmdn(32L, output_dim = 1L, seed = 87)
+
+  capture_call <- function(expr) {
+    warnings <- list()
+    value <- withCallingHandlers(
+      expr,
+      mst_pmdn_tail_resolution_warning = function(condition) {
+        warnings[[length(warnings) + 1L]] <<- condition
+        invokeRestart("muffleWarning")
+      }
+    )
+    list(value = value, warnings = warnings)
+  }
+  contrast <- capture_call(image_contrast_mst_pmdn(
+    model,
+    x,
+    image,
+    reference,
+    functional,
+    latent_draws = bank,
+    min_tail_draws = 2L
+  ))
+  occlusion <- capture_call(image_occlusion_mst_pmdn(
+    model,
+    x,
+    image,
+    reference,
+    functional,
+    patch_size = c(1L, 1L),
+    stride = c(1L, 1L),
+    taper = "none",
+    latent_draws = bank,
+    min_tail_draws = 2L
+  ))
+  expect_length(contrast$warnings, 1L)
+  expect_length(occlusion$warnings, 1L)
+  expect_s3_class(
+    occlusion$warnings[[1L]],
+    "mst_pmdn_tail_resolution_warning"
+  )
+})
+
+
+test_that("grouped callbacks receive full-channel masks", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image_array <- array(1, c(1, 2, 1, 1))
+  reference_array <- array(0, c(1, 2, 1, 1))
+
+  for (tensor_input in c(FALSE, TRUE)) {
+    mask_channels <- integer(0)
+    rebuild <- function(base_images, reference_images, masks,
+                        case_index = NULL) {
+      shape <- if (inherits(masks, "torch_tensor")) {
+        as.integer(masks$size())
+      } else {
+        dim(masks)
+      }
+      mask_channels <<- c(mask_channels, shape[2L])
+      (1 - masks) * base_images + masks * reference_images
+    }
+    image <- if (tensor_input) {
+      torch::torch_tensor(image_array)
+    } else {
+      image_array
+    }
+    reference <- if (tensor_input) {
+      torch::torch_tensor(reference_array)
+    } else {
+      reference_array
+    }
+    image_occlusion_mst_pmdn(
+      explanation_test_model(slope = 0, image_channel = 2L),
+      x,
+      image,
+      reference,
+      mst_functional("mean", 1L),
+      patch_size = c(1L, 1L),
+      stride = c(1L, 1L),
+      taper = "none",
+      channel_groups = list(first = 1L, second = 2L),
+      rebuild_channels = rebuild
+    )
+    expect_true(length(mask_channels) > 1L)
+    expect_true(all(mask_channels == 2L))
+  }
+})
