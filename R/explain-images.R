@@ -426,12 +426,10 @@ image_contrast_mst_pmdn <- function(model,
     )
   }
   if (isTRUE(decompose)) {
-    tail_summary <- diagnostics[c(
-      "min_expected_tail_draws",
-      "low_tail_resolution_count",
-      "tail_resolution_evaluations",
-      "low_tail_resolution_evaluations"
-    )]
+    tail_summary <- .tail_resolution_summary_mst_pmdn(
+      list(diagnostics),
+      min_tail_draws
+    )
   }
   .warn_tail_resolution_mst_pmdn(
     tail_summary, "image_contrast_mst_pmdn()"
