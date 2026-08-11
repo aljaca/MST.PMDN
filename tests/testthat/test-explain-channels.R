@@ -127,7 +127,7 @@ test_that("structural and numerical symmetry are the same inactive endpoint", {
   expect_length(result$active_channels, 0L)
   expect_equal(result$data$total, 0, tolerance = 0)
   expect_equal(
-    result$diagnostics$parameter_change_magnitudes["skewness"],
+    unname(result$diagnostics$parameter_change_magnitudes["skewness"]),
     0,
     tolerance = 0
   )
@@ -153,5 +153,8 @@ test_that("decomposition emits one classed tail-resolution summary", {
   expect_length(warnings, 1L)
   expect_s3_class(warnings[[1L]], "mst_pmdn_tail_resolution_warning")
   expect_equal(result$diagnostics$min_expected_tail_draws, 0)
-  expect_equal(result$diagnostics$parameter_change_magnitudes["location"], 1)
+  expect_equal(
+    unname(result$diagnostics$parameter_change_magnitudes["location"]),
+    1
+  )
 })

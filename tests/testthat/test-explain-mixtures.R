@@ -61,7 +61,7 @@ test_that("tail-component accounting preserves prediction response names", {
     named <- tail_components_mst_pmdn(
       pred,
       response = "surge",
-      threshold = 0,
+      threshold = 1.5,
       num_samples = 256L,
       seed = 43,
       min_tail_draws = 1L
@@ -71,7 +71,7 @@ test_that("tail-component accounting preserves prediction response names", {
   explicit <- tail_components_mst_pmdn(
     pred,
     response = 2L,
-    threshold = 0,
+    threshold = 1.5,
     num_samples = 256L,
     seed = 43,
     min_tail_draws = 1L

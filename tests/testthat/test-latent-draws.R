@@ -204,9 +204,9 @@ test_that("float32 endpoint uniforms produce finite Student-t samples", {
   sampled <- MST.PMDN:::.sample_with_latent_mst_pmdn(pred, bank)
   expect_true(all(is.finite(torch::as_array(sampled$samples))))
   expect_equal(
-    MST.PMDN:::.uniform_probability_bounds_mst_pmdn(
+    unname(MST.PMDN:::.uniform_probability_bounds_mst_pmdn(
       torch::torch_float()
-    )["lower"],
+    )["lower"]),
     2^-25,
     tolerance = 0
   )
