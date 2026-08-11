@@ -11,7 +11,6 @@ ice_mst_pmdn(
   grid = NULL,
   reference = NULL,
   n_curves = 100L,
-  cases = NULL,
   ale = TRUE,
   n_bins = 20L,
   num_samples = 4096L,
@@ -20,6 +19,7 @@ ice_mst_pmdn(
   chunk_size = NULL,
   device = "cpu",
   response_names = NULL,
+  cases = NULL,
   min_tail_draws = 20L
 )
 }

@@ -717,8 +717,9 @@ main <- function() {
 
   # Each psl/uas/vas field was standardized grid cell by grid cell. A zero
   # model-scale reference is therefore the physical training climatology.
-  # There are no deterministically derived image channels, so all three source
-  # fields can be blended jointly without a rebuild_channels callback.
+  # There are no deterministically derived image channels, so no
+  # rebuild_channels callback is needed. The whole-image contrast blends the
+  # three fields jointly; spatial occlusion attributes them separately.
   reference_images <- array(
     0,
     dim = c(1L, image_dimensions[2:4]),
