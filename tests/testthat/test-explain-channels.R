@@ -193,3 +193,25 @@ test_that("chunk-first Shapley evaluation reuses each df parent", {
   expect_equal(chunk_bank$.cache$gamma_scale_hits, 140L)
   expect_true(length(chunk_bank$.cache$gamma_scale_entries) <= 8L)
 })
+
+test_that("decomposition aggregates a rare-tail warning once", {
+  pair <- make_channel_pair(mu_to = 1)
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 1L, seed = 33)
+  warning_count <- 0L
+  result <- withCallingHandlers(
+    decompose_mst_pmdn(
+      pair$from,
+      pair$to,
+      mst_functional("exceedance", 1L, threshold = 1e30),
+      latent_draws = bank,
+      min_tail_draws = 20L
+    ),
+    mst_pmdn_tail_resolution_warning = function(condition) {
+      warning_count <<- warning_count + 1L
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_equal(warning_count, 1L)
+  expect_equal(result$diagnostics$min_expected_tail_draws, 0)
+  expect_gt(result$diagnostics$low_tail_resolution_evaluations, 0)
+})

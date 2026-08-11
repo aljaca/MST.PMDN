@@ -262,3 +262,52 @@ test_that("cosine occlusion reports mask weight and weighted coverage", {
   expect_equal(result$weighted_coverage, window, tolerance = 1e-12)
   expect_true(all(result$coverage == 1))
 })
+
+test_that("image XAI entry points each aggregate tail warnings once", {
+  x <- cbind(feature = c(-0.25, 0.5), other = 0)
+  image <- array(c(1, 2), c(2, 1, 1, 1))
+  reference <- array(0, c(1, 1, 1, 1))
+  model <- distribution_explanation_test_model(n_mixtures = 1L)
+  functional <- mst_functional(
+    "joint_exceedance",
+    c(1L, 2L),
+    threshold = c(1e30, 1e30)
+  )
+  bank <- latent_draws_mst_pmdn(64L, output_dim = 2L, seed = 74)
+  calls <- list(
+    contrast = function() image_contrast_mst_pmdn(
+      model,
+      x,
+      image,
+      reference,
+      functional,
+      latent_draws = bank,
+      min_tail_draws = 20L
+    ),
+    occlusion = function() image_occlusion_mst_pmdn(
+      model,
+      x,
+      image,
+      reference,
+      functional,
+      patch_size = c(1L, 1L),
+      stride = c(1L, 1L),
+      taper = "none",
+      latent_draws = bank,
+      min_tail_draws = 20L
+    )
+  )
+  for (name in names(calls)) {
+    warning_count <- 0L
+    result <- withCallingHandlers(
+      calls[[name]](),
+      mst_pmdn_tail_resolution_warning = function(condition) {
+        warning_count <<- warning_count + 1L
+        invokeRestart("muffleWarning")
+      }
+    )
+    expect_equal(warning_count, 1L, info = name)
+    expect_equal(result$diagnostics$min_expected_tail_draws, 0)
+    expect_gt(result$diagnostics$low_tail_resolution_evaluations, 0)
+  }
+})

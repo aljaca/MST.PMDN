@@ -48,11 +48,13 @@ main <- function() {
     "surge_lag1"
   )
   num_samples <- 8192L
+  min_tail_draws <- 20L
   n_ale_bins <- 12L
   n_ice_grid_points <- 25L
   n_ice_display_curves <- 40L
   n_image_contrast_cases <- 20L
   n_occlusion_cases <- 5L
+  n_occlusion_banks <- 3L
   patch_size <- c(8L, 8L)
   stride <- c(4L, 4L)
   chunk_size <- 16L
@@ -442,15 +444,36 @@ main <- function() {
     device = device,
     seed = xai_seed
   )
+  report_tail_resolution <- function(label, object) {
+    minimum <- object$diagnostics$min_expected_tail_draws
+    low <- object$diagnostics$low_tail_resolution_evaluations
+    if (is.null(low)) {
+      low <- length(object$diagnostics$low_tail_resolution_rows)
+    }
+    cat(
+      sprintf(
+        paste0(
+          "Tail resolution [%s]: minimum expected draws=%s; ",
+          "low evaluations=%d; threshold=%d.\n"
+        ),
+        label,
+        if (is.finite(minimum)) format(minimum, digits = 5) else "NA",
+        as.integer(low),
+        min_tail_draws
+      )
+    )
+    invisible(object)
+  }
   evaluate_functional <- function(functional) {
-    suppressWarnings(functional_mst_pmdn(
+    functional_mst_pmdn(
       pred = pred_test,
       functional = functional,
       latent_draws = latent_bank,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
-    ))
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
+    )
   }
 
   cat("Evaluating predictive functionals...\n")
@@ -492,18 +515,16 @@ main <- function() {
       functional_results$surge_skew_direction$data$value
   }
 
-  low_resolution <- vapply(
-    functional_results,
-    function(result) sum(result$data$low_tail_resolution, na.rm = TRUE),
-    integer(1)
-  )
-  low_resolution <- low_resolution[low_resolution > 0L]
-  if (length(low_resolution)) {
-    cat(
-      "Low Monte Carlo tail resolution rows:",
-      paste(names(low_resolution), low_resolution, sep = "=", collapse = ", "),
-      "\n"
-    )
+  for (name in names(functional_results)) {
+    if (identical(
+      functional_results[[name]]$settings$method,
+      "monte_carlo"
+    )) {
+      report_tail_resolution(
+        paste("functional", name),
+        functional_results[[name]]
+      )
+    }
   }
 
   finite_joint <- which(is.finite(
@@ -638,8 +659,10 @@ main <- function() {
       latent_draws = latent_bank,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
     )
+    report_tail_resolution(paste("ALE", feature), ale_model_scale)
     ice_model_scale <- ice_mst_pmdn(
       model = model,
       inputs = ice_inputs,
@@ -652,8 +675,10 @@ main <- function() {
       latent_draws = latent_bank,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
     )
+    report_tail_resolution(paste("ICE", feature), ice_model_scale)
     ale_results[[feature]] <- physicalize_ale(ale_model_scale, feature)
     ice_results[[feature]] <- physicalize_ice(ice_model_scale, feature)
     ice_results[[feature]]$curves$date <-
@@ -665,8 +690,9 @@ main <- function() {
 
   # Each psl/uas/vas field was standardized grid cell by grid cell. A zero
   # model-scale reference is therefore the physical training climatology.
-  # There are no deterministically derived image channels, so all three source
-  # fields can be blended jointly without a rebuild_channels callback.
+  # There are no deterministically derived image channels. The whole-image
+  # contrast blends all three jointly; spatial occlusion separates the fields
+  # without requiring a rebuild_channels callback.
   reference_images <- array(
     0,
     dim = c(1L, image_dimensions[2:4]),
@@ -685,43 +711,188 @@ main <- function() {
     latent_draws = latent_bank,
     chunk_size = chunk_size,
     device = device,
-    response_names = response_names
+    response_names = response_names,
+    min_tail_draws = min_tail_draws
   )
+  report_tail_resolution("whole-image contrast", image_contrast)
   image_contrast$data$date <- test_dates[image_contrast$data$case]
 
-  cat("Computing spatial occlusion maps...\n")
-  image_occlusion <- image_occlusion_mst_pmdn(
-    model = model,
-    inputs = x_test,
-    image_inputs = x_image_test,
-    reference_images = reference_images,
-    functional = joint_event,
-    patch_size = patch_size,
-    stride = stride,
-    cases = occlusion_cases,
-    taper = "cosine",
-    channel_groups = NULL,
-    decompose = FALSE,
-    latent_draws = latent_bank,
-    chunk_size = chunk_size,
-    device = device,
-    response_names = response_names
+  cat("Computing field-specific spatial occlusion maps...\n")
+  occlusion_channel_groups <- list(
+    psl = 1L,
+    uas = 2L,
+    vas = 3L
+  )
+  occlusion_seeds <- xai_seed + seq_len(n_occlusion_banks)
+  if (anyNA(occlusion_seeds) || any(occlusion_seeds < 0L)) {
+    stop("Independent occlusion seeds exceed the supported integer range.")
+  }
+  image_occlusion_replicates <- lapply(
+    seq_len(n_occlusion_banks),
+    function(bank_index) {
+      bank <- latent_draws_mst_pmdn(
+        num_samples = num_samples,
+        output_dim = n_response,
+        dtype = pred_test$mu$dtype,
+        device = device,
+        seed = occlusion_seeds[bank_index]
+      )
+      result <- image_occlusion_mst_pmdn(
+        model = model,
+        inputs = x_test,
+        image_inputs = x_image_test,
+        reference_images = reference_images,
+        functional = joint_event,
+        patch_size = patch_size,
+        stride = stride,
+        cases = occlusion_cases,
+        taper = "cosine",
+        channel_groups = occlusion_channel_groups,
+        decompose = FALSE,
+        latent_draws = bank,
+        chunk_size = chunk_size,
+        device = device,
+        response_names = response_names,
+        min_tail_draws = min_tail_draws
+      )
+      report_tail_resolution(
+        paste("field occlusion bank", bank_index),
+        result
+      )
+      result
+    }
+  )
+
+  # The across-bank range is a Monte Carlo sign-stability diagnostic, not
+  # a calibrated confidence interval.
+  combine_occlusion_banks <- function(results) {
+    reference <- results[[1L]]
+    data_key <- with(
+      reference$data,
+      paste(case, group, patch, sep = ":")
+    )
+    population_key <- with(
+      reference$population,
+      paste(group, patch, sep = ":")
+    )
+    for (result in results[-1L]) {
+      candidate_data_key <- with(
+        result$data,
+        paste(case, group, patch, sep = ":")
+      )
+      candidate_population_key <- with(
+        result$population,
+        paste(group, patch, sep = ":")
+      )
+      if (!identical(candidate_data_key, data_key) ||
+          !identical(candidate_population_key, population_key)) {
+        stop("Independent occlusion runs returned incompatible patch rows.")
+      }
+    }
+
+    effect_by_bank <- vapply(
+      results,
+      function(result) result$data$effect,
+      numeric(nrow(reference$data))
+    )
+    reference$data$effect <- rowMeans(effect_by_bank)
+    reference$data$bank_min_effect <- apply(effect_by_bank, 1L, min)
+    reference$data$bank_max_effect <- apply(effect_by_bank, 1L, max)
+    reference$data$sign_stable <-
+      reference$data$bank_min_effect > 0 |
+      reference$data$bank_max_effect < 0
+    reference$data$plot_effect <- ifelse(
+      reference$data$sign_stable,
+      reference$data$effect,
+      NA_real_
+    )
+
+    for (i in seq_len(nrow(reference$population))) {
+      block <- reference$data[
+        reference$data$group == reference$population$group[i] &
+          reference$data$patch == reference$population$patch[i],
+        ,
+        drop = FALSE
+      ]
+      reference$population$mean_signed_effect[i] <- mean(block$effect)
+      reference$population$mean_absolute_effect[i] <- mean(abs(block$effect))
+      reference$population$positive_fraction[i] <- mean(block$effect > 0)
+    }
+    signed_by_bank <- vapply(
+      results,
+      function(result) result$population$mean_signed_effect,
+      numeric(nrow(reference$population))
+    )
+    reference$population$bank_min_signed_effect <-
+      apply(signed_by_bank, 1L, min)
+    reference$population$bank_max_signed_effect <-
+      apply(signed_by_bank, 1L, max)
+    reference$population$sign_stable <-
+      reference$population$bank_min_signed_effect > 0 |
+      reference$population$bank_max_signed_effect < 0
+    reference$population$plot_mean_signed_effect <- ifelse(
+      reference$population$sign_stable,
+      reference$population$mean_signed_effect,
+      NA_real_
+    )
+    reference$population$plot_mean_absolute_effect <- ifelse(
+      reference$population$sign_stable,
+      reference$population$mean_absolute_effect,
+      NA_real_
+    )
+    reference$population$plot_positive_fraction <- ifelse(
+      reference$population$sign_stable,
+      reference$population$positive_fraction,
+      NA_real_
+    )
+
+    bank_minima <- vapply(
+      results,
+      function(result) result$diagnostics$min_expected_tail_draws,
+      numeric(1)
+    )
+    reference$diagnostics$min_expected_tail_draws <-
+      min(bank_minima, na.rm = TRUE)
+    reference$diagnostics$low_tail_resolution_evaluations <- sum(vapply(
+      results,
+      function(result) {
+        result$diagnostics$low_tail_resolution_evaluations
+      },
+      numeric(1)
+    ))
+    reference$diagnostics$independent_bank <- lapply(
+      results,
+      function(result) result$diagnostics
+    )
+    reference$settings$n_independent_latent_banks <- length(results)
+    reference$settings$latent_bank_seeds <- occlusion_seeds
+    reference
+  }
+
+  image_occlusion <- combine_occlusion_banks(
+    image_occlusion_replicates
   )
   image_occlusion$data$date <- test_dates[image_occlusion$data$case]
+  rm(image_occlusion_replicates)
 
   # Mixture-safe tail accounting is only needed for the optional M > 1 page.
   tail_components <- list()
   if (n_mixtures > 1L) {
     cat("Computing surge tail-component accounting...\n")
-    tail_components$surge <- suppressWarnings(tail_components_mst_pmdn(
+    tail_components$surge <- tail_components_mst_pmdn(
       pred = pred_test,
       response = 2L,
       threshold = model_threshold[2L],
       latent_draws = latent_bank,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
-    ))
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
+    )
+    report_tail_resolution(
+      "surge mixture tail components",
+      tail_components$surge
+    )
     tail_components$surge$data$date <-
       test_dates[tail_components$surge$data$row]
   }
@@ -750,15 +921,20 @@ main <- function() {
       image_inputs = x_image_test[extreme_case, , , , drop = FALSE],
       device = device
     )
-    case_decomposition <- suppressWarnings(decompose_mst_pmdn(
+    case_decomposition <- decompose_mst_pmdn(
       pred_from = pred_typical,
       pred_to = pred_extreme,
       functional = joint_event,
       latent_draws = latent_bank,
       chunk_size = 1L,
       device = device,
-      response_names = response_names
-    ))
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
+    )
+    report_tail_resolution(
+      "typical-to-extreme decomposition",
+      case_decomposition
+    )
   }
 
   # The plotting methods do not require the latent bank. Release these
@@ -787,21 +963,19 @@ main <- function() {
   }
   occlusion_plot_limits <- list(
     case_effect = rep(
-      c(-1, 1) * finite_limit(image_occlusion$data$effect, absolute = TRUE),
-      length.out = 2L
-    ),
-    mean_signed_effect = rep(
       c(-1, 1) * finite_limit(
-        image_occlusion$population$mean_signed_effect,
+        image_occlusion$data$plot_effect,
         absolute = TRUE
       ),
       length.out = 2L
     ),
-    mean_absolute_effect = c(
-      0,
-      finite_limit(image_occlusion$population$mean_absolute_effect)
-    ),
-    positive_fraction = c(0, 1)
+    mean_signed_effect = rep(
+      c(-1, 1) * finite_limit(
+        image_occlusion$population$plot_mean_signed_effect,
+        absolute = TRUE
+      ),
+      length.out = 2L
+    )
   )
 
   pdf_device <- if (capabilities("cairo")) {
@@ -1409,149 +1583,133 @@ main <- function() {
     )
   }
 
+  field_labels <- c(
+    psl = "Sea-level pressure",
+    uas = "Eastward wind",
+    vas = "Northward wind"
+  )
   graphics::layout(
-    matrix(c(1:6, rep(7L, 3L)), nrow = 3L, byrow = TRUE),
-    heights = c(3.8, 0.75, 1.7)
+    matrix(c(1L, 2L, 3L, 4L, 4L, 4L), nrow = 2L, byrow = TRUE),
+    heights = c(4, 0.85)
   )
   population_map_mar <- c(3.1, 4, 2.4, 0.6)
   graphics::par(
     mar = population_map_mar,
-    oma = c(0.2, 0, 2.2, 0),
+    oma = c(2.4, 0, 2.2, 0),
     mgp = c(2.1, 0.55, 0),
     cex.axis = 0.78,
     cex.lab = 0.8,
     cex.main = 0.82,
     pty = "s"
   )
-  plot(
-    image_occlusion,
-    statistic = "mean_signed_effect",
-    xlab = "Array column",
-    ylab = "Array row",
-    main = "Mean signed effect",
-    col = diverging_palette,
-    zlim = occlusion_plot_limits$mean_signed_effect,
-    useRaster = FALSE
-  )
-  graphics::par(mar = population_map_mar, pty = "s")
-  plot(
-    image_occlusion,
-    statistic = "mean_absolute_effect",
-    xlab = "Array column",
-    ylab = "",
-    main = "Mean absolute effect",
-    col = absolute_palette,
-    zlim = occlusion_plot_limits$mean_absolute_effect,
-    useRaster = FALSE
-  )
-  graphics::par(mar = population_map_mar, pty = "s")
-  plot(
-    image_occlusion,
-    statistic = "positive_fraction",
-    xlab = "Array column",
-    ylab = "",
-    main = "Fraction supporting risk",
-    col = diverging_palette,
-    zlim = occlusion_plot_limits$positive_fraction,
-    useRaster = FALSE
-  )
-  draw_horizontal_colour_key(
-    occlusion_plot_limits$mean_signed_effect,
-    diverging_palette,
-    "Mean signed effect"
-  )
-  draw_horizontal_colour_key(
-    occlusion_plot_limits$mean_absolute_effect,
-    absolute_palette,
-    "Mean absolute effect"
-  )
-  draw_horizontal_colour_key(
-    occlusion_plot_limits$positive_fraction,
-    diverging_palette,
-    "Positive-effect fraction"
-  )
-  graphics::par(mar = rep(0, 4), pty = "m")
-  graphics::plot.new()
-  graphics::text(
-    0.5,
-    0.65,
-    sprintf(
-      "Joint psl/uas/vas occlusion; %d x %d patch; stride %d x %d.",
-      patch_size[1L], patch_size[2L], stride[1L], stride[2L]
-    ),
-    cex = 0.82
-  )
-  graphics::text(
-    0.5,
-    0.38,
-    paste(
-      "Effect = original minus patch-occluded; positive means the",
-      "observed patch supports risk."
-    ),
-    cex = 0.78
-  )
-  graphics::mtext(
-    "Population summaries across selected high-risk cases",
-    side = 3,
-    outer = TRUE,
-    line = 0.5,
-    cex = 1.05
-  )
-  graphics::layout(matrix(1L, nrow = 1L))
-
-  graphics::layout(matrix(seq_len(6L), nrow = 2L, byrow = TRUE))
-  individual_map_mar <- c(3.2, 4, 2.3, 0.6)
-  graphics::par(
-    oma = c(2.8, 0, 2.2, 0),
-    mgp = c(2.1, 0.55, 0),
-    cex.axis = 0.76,
-    cex.lab = 0.8,
-    cex.main = 0.82
-  )
-  for (i in seq_along(occlusion_cases)) {
-    case <- occlusion_cases[i]
-    panel_row <- if (i <= 3L) 1L else 2L
-    panel_column <- if (i <= 3L) i else i - 3L
-    graphics::par(
-      mar = individual_map_mar,
-      pty = "s"
-    )
+  for (group_index in seq_along(occlusion_channel_groups)) {
+    group_name <- names(occlusion_channel_groups)[group_index]
+    graphics::par(mar = population_map_mar, pty = "s")
     plot(
       image_occlusion,
-      case = case,
-      statistic = "effect",
-      xlab = if (panel_row == 2L) "Array column" else "",
-      ylab = if (panel_column == 1L) "Array row" else "",
-      main = format(test_dates[case]),
+      group = group_name,
+      statistic = "plot_mean_signed_effect",
+      xlab = "Array column",
+      ylab = if (group_index == 1L) "Array row" else "",
+      main = field_labels[group_name],
       col = diverging_palette,
-      zlim = occlusion_plot_limits$case_effect,
+      zlim = occlusion_plot_limits$mean_signed_effect,
       useRaster = FALSE
     )
   }
-  draw_vertical_colour_key(
-    occlusion_plot_limits$case_effect,
+  draw_horizontal_colour_key(
+    occlusion_plot_limits$mean_signed_effect,
     diverging_palette,
-    "Probability effect (original - occluded)",
-    compact = TRUE
+    "Mean signed probability effect"
   )
   graphics::mtext(
-    "Individual joint-channel occlusion maps: highest-risk cases",
+    "Field-specific population occlusion: selected high-risk cases",
     side = 3,
     outer = TRUE,
     line = 0.5,
     cex = 1.05
   )
   graphics::mtext(
-    paste(
-      "All panels share one scale; red supports risk and blue suppresses it.",
-      "Axes follow the saved array orientation."
+    sprintf(
+      paste0(
+        "%d independent latent banks; patches whose bank range covers ",
+        "zero are masked. Cosine mask mean %.3f; %d x %d patch; ",
+        "stride %d x %d."
+      ),
+      n_occlusion_banks,
+      unique(image_occlusion$patches$mask_mean),
+      patch_size[1L],
+      patch_size[2L],
+      stride[1L],
+      stride[2L]
     ),
     side = 1,
     outer = TRUE,
-    line = 0.5,
-    cex = 0.75
+    line = 0.65,
+    cex = 0.72
   )
   graphics::layout(matrix(1L, nrow = 1L))
+
+  for (group_name in names(occlusion_channel_groups)) {
+    graphics::layout(matrix(seq_len(6L), nrow = 2L, byrow = TRUE))
+    individual_map_mar <- c(3.2, 4, 2.3, 0.6)
+    graphics::par(
+      oma = c(2.8, 0, 2.2, 0),
+      mgp = c(2.1, 0.55, 0),
+      cex.axis = 0.76,
+      cex.lab = 0.8,
+      cex.main = 0.82
+    )
+    for (i in seq_along(occlusion_cases)) {
+      case <- occlusion_cases[i]
+      panel_row <- if (i <= 3L) 1L else 2L
+      panel_column <- if (i <= 3L) i else i - 3L
+      graphics::par(
+        mar = individual_map_mar,
+        pty = "s"
+      )
+      plot(
+        image_occlusion,
+        case = case,
+        group = group_name,
+        statistic = "plot_effect",
+        xlab = if (panel_row == 2L) "Array column" else "",
+        ylab = if (panel_column == 1L) "Array row" else "",
+        main = format(test_dates[case]),
+        col = diverging_palette,
+        zlim = occlusion_plot_limits$case_effect,
+        useRaster = FALSE
+      )
+    }
+    draw_vertical_colour_key(
+      occlusion_plot_limits$case_effect,
+      diverging_palette,
+      "Probability effect (original - occluded)",
+      compact = TRUE
+    )
+    graphics::mtext(
+      paste(
+        "Individual",
+        field_labels[group_name],
+        "occlusion maps: highest-risk cases"
+      ),
+      side = 3,
+      outer = TRUE,
+      line = 0.5,
+      cex = 1.05
+    )
+    graphics::mtext(
+      paste(
+        "All fields and dates share one scale; sign-unstable patches are",
+        "masked. Axes follow the saved array orientation."
+      ),
+      side = 1,
+      outer = TRUE,
+      line = 0.5,
+      cex = 0.75
+    )
+    graphics::layout(matrix(1L, nrow = 1L))
+  }
 
   if (!is.null(case_decomposition)) {
     active_channels <- case_decomposition$active_channels

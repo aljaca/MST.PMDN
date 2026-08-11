@@ -328,3 +328,39 @@ test_that("probability transforms do not alter tail-resolution diagnostics", {
   expect_equal(result$data$expected_tail_draws, 0)
   expect_equal(result$data$value, stats::qlogis(0.5 / 64))
 })
+
+test_that("rare joint exceedance emits a classed resolution warning", {
+  pred <- make_mdn_output(
+    pi = matrix(1, 1, 1),
+    mu = array(c(0, 0), c(1, 1, 2)),
+    scale_chol = array(diag(2), c(1, 1, 2, 2)),
+    nu = matrix(Inf, 1, 1),
+    alpha = array(0, c(1, 1, 2)),
+    skew_none = TRUE
+  )
+  warning_count <- 0L
+  result <- withCallingHandlers(
+    functional_mst_pmdn(
+      pred,
+      mst_functional(
+        "joint_exceedance",
+        c(1L, 2L),
+        threshold = c(1e30, 1e30)
+      ),
+      num_samples = 64L,
+      seed = 54,
+      min_tail_draws = 20L
+    ),
+    mst_pmdn_tail_resolution_warning = function(condition) {
+      warning_count <<- warning_count + 1L
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_equal(warning_count, 1L)
+  expect_equal(result$data$expected_tail_draws, 0)
+  expect_true(result$data$low_tail_resolution)
+  expect_identical(
+    result$diagnostics$low_tail_resolution_rows,
+    1L
+  )
+})
