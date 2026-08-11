@@ -166,9 +166,14 @@ latent_draws_mst_pmdn <- function(num_samples = 4096L,
   nu_safe <- torch_where(normal, 2 * torch_ones_like(nu), nu)
   nu_key <- as.numeric(torch::as_array(nu$to(device = "cpu")))
   gamma_key <- as.numeric(torch::as_array(gamma_u$to(device = "cpu")))
+  half_quantum <- if (gamma_u$dtype == torch_float()) {
+    2^-25
+  } else {
+    2^-54
+  }
   gamma_key <- pmin(
-    pmax(gamma_key, .Machine$double.xmin),
-    1 - .Machine$double.eps
+    pmax(gamma_key, half_quantum),
+    1 - half_quantum
   )
   entries <- if (is.environment(cache) &&
                  is.list(cache$gamma_scale_entries)) {

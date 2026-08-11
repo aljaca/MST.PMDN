@@ -27,6 +27,7 @@
     alpha = torch_index_select(pred$alpha, 2L, index_for(pred$alpha)),
     skew_none = .validate_skew_none(pred, "pred")
   )
+  attr(out, "response_names") <- attr(pred, "response_names")
   out
 }
 
