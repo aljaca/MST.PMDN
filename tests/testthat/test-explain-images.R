@@ -322,15 +322,18 @@ test_that("image entry points emit one classed resolution warning per call", {
     )
     list(value = value, warnings = warnings)
   }
-  contrast <- capture_call(image_contrast_mst_pmdn(
-    model,
-    x,
-    image,
-    reference,
-    functional,
-    latent_draws = bank,
-    min_tail_draws = 2L
-  ))
+  contrasts <- lapply(c(FALSE, TRUE), function(decompose) {
+    capture_call(image_contrast_mst_pmdn(
+      model,
+      x,
+      image,
+      reference,
+      functional,
+      decompose = decompose,
+      latent_draws = bank,
+      min_tail_draws = 2L
+    ))
+  })
   occlusion <- capture_call(image_occlusion_mst_pmdn(
     model,
     x,
@@ -343,14 +346,25 @@ test_that("image entry points emit one classed resolution warning per call", {
     latent_draws = bank,
     min_tail_draws = 2L
   ))
-  expect_length(contrast$warnings, 1L)
+  expect_true(all(vapply(
+    contrasts,
+    function(item) length(item$warnings) == 1L,
+    logical(1)
+  )))
+  for (contrast in contrasts) {
+    expect_s3_class(
+      contrast$warnings[[1L]],
+      "mst_pmdn_tail_resolution_warning"
+    )
+    expect_identical(contrast$warnings[[1L]]$min_tail_draws, 2L)
+    expect_identical(contrast$value$diagnostics$min_tail_draws, 2L)
+  }
   expect_length(occlusion$warnings, 1L)
   expect_s3_class(
     occlusion$warnings[[1L]],
     "mst_pmdn_tail_resolution_warning"
   )
 })
-
 
 test_that("grouped callbacks receive full-channel masks", {
   x <- matrix(0, nrow = 1, ncol = 1)
