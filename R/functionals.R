@@ -381,6 +381,55 @@ print.mst_functional <- function(x, ...) {
   if (length(x)) max(x) else NA_real_
 }
 
+.warn_tail_resolution_mst_pmdn <- function(min_expected_tail_draws,
+                                            min_tail_draws,
+                                            n_low,
+                                            context) {
+  if (!is.finite(min_expected_tail_draws) ||
+      min_expected_tail_draws >= min_tail_draws ||
+      !is.finite(n_low) || n_low < 1L) {
+    return(invisible(FALSE))
+  }
+  message <- sprintf(
+    paste0(
+      "%s tail resolution is below %d expected draws (minimum %.4g ",
+      "across %d evaluated row%s); increase num_samples or inspect ",
+      "diagnostics."
+    ),
+    context,
+    min_tail_draws,
+    min_expected_tail_draws,
+    as.integer(n_low),
+    if (n_low == 1L) "" else "s"
+  )
+  condition <- structure(
+    list(
+      message = message,
+      call = NULL,
+      min_expected_tail_draws = min_expected_tail_draws,
+      min_tail_draws = min_tail_draws,
+      n_low = as.integer(n_low),
+      context = context
+    ),
+    class = c(
+      "mst_pmdn_tail_resolution_warning",
+      "warning",
+      "condition"
+    )
+  )
+  warning(condition)
+  invisible(TRUE)
+}
+
+.muffle_tail_resolution_mst_pmdn <- function(expr) {
+  withCallingHandlers(
+    expr,
+    mst_pmdn_tail_resolution_warning = function(condition) {
+      invokeRestart("muffleWarning")
+    }
+  )
+}
+
 .analytic_functional_mst_pmdn <- function(pred, functional, responses) {
   type <- functional$type
   info <- .validate_prediction_mst_pmdn(pred)
@@ -646,19 +695,12 @@ functional_mst_pmdn <- function(pred,
   } else {
     NULL
   }
-  if (any(low_resolution)) {
-    warning(
-      sprintf(
-        paste0(
-          "Monte Carlo tail resolution is below %d expected draws for %d ",
-          "prediction row(s); increase num_samples or inspect diagnostics."
-        ),
-        min_tail_draws,
-        sum(low_resolution)
-      ),
-      call. = FALSE
-    )
-  }
+  .warn_tail_resolution_mst_pmdn(
+    .min_finite_mst_pmdn(expected_tail_draws),
+    min_tail_draws,
+    sum(low_resolution),
+    "Monte Carlo functional"
+  )
   invalid_analytic <- is.na(values) |
     (!is.finite(values) & functional$type != "df")
   if (!is_mc && any(invalid_analytic)) {

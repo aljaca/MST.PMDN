@@ -60,6 +60,7 @@ tail_components_mst_pmdn <- function(pred,
     NA_real_, nrow = info$batch_size, ncol = info$n_mixtures
   )
   component_diagnostics <- vector("list", info$n_mixtures)
+  component_low_resolution <- integer(info$n_mixtures)
   for (component in seq_len(info$n_mixtures)) {
     component_pred <- .component_prediction_mst_pmdn(pred, component)
     result <- .functional_values_quiet_mst_pmdn(
@@ -69,10 +70,14 @@ tail_components_mst_pmdn <- function(pred,
       latent_draws,
       chunk_size,
       device,
-      response_names
+      response_names,
+      min_tail_draws
     )
     component_probability[, component] <- result$data$value
     component_diagnostics[[component]] <- result$diagnostics
+    component_low_resolution[component] <- sum(
+      result$data$low_tail_resolution
+    )
   }
 
   weights <- as.matrix(torch::as_array(pred$pi$to(device = "cpu")))
@@ -90,19 +95,17 @@ tail_components_mst_pmdn <- function(pred,
   }
   expected_tail_draws <- num_samples * pmin(total, 1 - total)
   low_resolution <- expected_tail_draws < min_tail_draws
-  if (any(low_resolution)) {
-    warning(
-      sprintf(
-        paste0(
-          "Mixture exceedance resolution is below %d expected draws for %d ",
-          "prediction row(s)."
-        ),
-        min_tail_draws,
-        sum(low_resolution)
-      ),
-      call. = FALSE
-    )
-  }
+  component_minimum_tail <- vapply(
+    component_diagnostics,
+    function(x) x$min_expected_tail_draws,
+    numeric(1)
+  )
+  minimum_tail <- .min_finite_mst_pmdn(c(
+    expected_tail_draws,
+    component_minimum_tail
+  ))
+  low_tail_evaluations <- sum(low_resolution) +
+    sum(component_low_resolution)
 
   data <- do.call(rbind, lapply(seq_len(info$batch_size), function(row) {
     data.frame(
@@ -131,13 +134,21 @@ tail_components_mst_pmdn <- function(pred,
     diagnostics = list(
       component = component_diagnostics,
       low_tail_resolution_rows = which(low_resolution),
-      min_expected_tail_draws = .min_finite_mst_pmdn(
+      min_expected_tail_draws = minimum_tail,
+      min_expected_total_tail_draws = .min_finite_mst_pmdn(
         expected_tail_draws
-      )
+      ),
+      low_tail_resolution_evaluations = low_tail_evaluations
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_tail_components"
+  .warn_tail_resolution_mst_pmdn(
+    out$diagnostics$min_expected_tail_draws,
+    min_tail_draws,
+    out$diagnostics$low_tail_resolution_evaluations,
+    "Mixture exceedance"
+  )
   out
 }
 

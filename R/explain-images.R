@@ -238,7 +238,8 @@ image_contrast_mst_pmdn <- function(model,
                                     seed = NULL,
                                     chunk_size = NULL,
                                     device = "cpu",
-                                    response_names = NULL) {
+                                    response_names = NULL,
+                                    min_tail_draws = 20L) {
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }
@@ -290,6 +291,7 @@ image_contrast_mst_pmdn <- function(model,
     chunk_size = chunk_size, device = device
   )
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
   latent_draws <- .ensure_latent_bank_mst_pmdn(
     pred_original, functional, latent_draws, num_samples, seed, device
   )
@@ -297,7 +299,7 @@ image_contrast_mst_pmdn <- function(model,
 
   active_channels <- character(0)
   if (isTRUE(decompose)) {
-    decomposition <- suppressWarnings(decompose_mst_pmdn(
+    decomposition <- .muffle_tail_resolution_mst_pmdn(decompose_mst_pmdn(
       pred_from = pred_reference,
       pred_to = pred_original,
       functional = functional,
@@ -306,7 +308,8 @@ image_contrast_mst_pmdn <- function(model,
       num_samples = num_samples,
       chunk_size = chunk_size,
       device = device,
-      response_names = response_names
+      response_names = response_names,
+      min_tail_draws = min_tail_draws
     ))
     data <- data.frame(
       case = cases,
@@ -325,11 +328,11 @@ image_contrast_mst_pmdn <- function(model,
   } else {
     original_result <- .functional_values_quiet_mst_pmdn(
       pred_original, functional, num_samples, latent_draws,
-      chunk_size, device, response_names
+      chunk_size, device, response_names, min_tail_draws
     )
     reference_result <- .functional_values_quiet_mst_pmdn(
       pred_reference, functional, num_samples, latent_draws,
-      chunk_size, device, response_names
+      chunk_size, device, response_names, min_tail_draws
     )
     data <- data.frame(
       case = cases,
@@ -343,6 +346,23 @@ image_contrast_mst_pmdn <- function(model,
       reference = reference_result$diagnostics
     )
   }
+  minimum_tail <- if (isTRUE(decompose)) {
+    diagnostics$min_expected_tail_draws
+  } else {
+    .min_finite_mst_pmdn(c(
+      diagnostics$original$min_expected_tail_draws,
+      diagnostics$reference$min_expected_tail_draws
+    ))
+  }
+  low_tail_evaluations <- if (isTRUE(decompose)) {
+    diagnostics$low_tail_resolution_evaluations
+  } else {
+    length(diagnostics$original$low_tail_resolution_rows) +
+      length(diagnostics$reference$low_tail_resolution_rows)
+  }
+  diagnostics$min_expected_tail_draws <- minimum_tail
+  diagnostics$low_tail_resolution_evaluations <- low_tail_evaluations
+
   out <- list(
     data = data,
     functional = functional,
@@ -354,12 +374,19 @@ image_contrast_mst_pmdn <- function(model,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,
-      device = device
+      device = device,
+      min_tail_draws = min_tail_draws
     ),
     diagnostics = diagnostics,
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_image_contrast"
+  .warn_tail_resolution_mst_pmdn(
+    out$diagnostics$min_expected_tail_draws,
+    min_tail_draws,
+    out$diagnostics$low_tail_resolution_evaluations,
+    "Whole-image contrast"
+  )
   out
 }
 
@@ -422,7 +449,8 @@ image_occlusion_mst_pmdn <- function(model,
                                      seed = NULL,
                                      chunk_size = NULL,
                                      device = "cpu",
-                                     response_names = NULL) {
+                                     response_names = NULL,
+                                     min_tail_draws = 20L) {
   if (!inherits(functional, "mst_functional")) {
     stop("functional must be returned by mst_functional().", call. = FALSE)
   }
@@ -454,6 +482,7 @@ image_occlusion_mst_pmdn <- function(model,
   reference <- .subset_rows_mst_pmdn(reference_images, cases)
   n <- length(cases)
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
 
   original_images <- .rebuild_or_blend_images_mst_pmdn(
     base,
@@ -475,7 +504,7 @@ image_occlusion_mst_pmdn <- function(model,
   if (!is.null(latent_draws)) num_samples <- latent_draws$num_samples
   original_result <- .functional_values_quiet_mst_pmdn(
     pred_original, functional, num_samples, latent_draws,
-    chunk_size, device, response_names
+    chunk_size, device, response_names, min_tail_draws
   )
 
   row_starts <- .patch_starts_mst_pmdn(
@@ -528,7 +557,7 @@ image_occlusion_mst_pmdn <- function(model,
       )
 
       if (isTRUE(decompose)) {
-        decomposition <- suppressWarnings(decompose_mst_pmdn(
+        decomposition <- .muffle_tail_resolution_mst_pmdn(decompose_mst_pmdn(
           pred_from = pred_occluded,
           pred_to = pred_original,
           functional = functional,
@@ -537,7 +566,8 @@ image_occlusion_mst_pmdn <- function(model,
           num_samples = num_samples,
           chunk_size = chunk_size,
           device = device,
-          response_names = response_names
+          response_names = response_names,
+          min_tail_draws = min_tail_draws
         ))
         effect <- decomposition$data$total
         active_channels <- union(
@@ -547,7 +577,7 @@ image_occlusion_mst_pmdn <- function(model,
       } else {
         occluded_result <- .functional_values_quiet_mst_pmdn(
           pred_occluded, functional, num_samples, latent_draws,
-          chunk_size, device, response_names
+          chunk_size, device, response_names, min_tail_draws
         )
         effect <- original_result$data$value - occluded_result$data$value
         diagnostic <- occluded_result$diagnostics
@@ -614,6 +644,30 @@ image_occlusion_mst_pmdn <- function(model,
   ))
   rownames(population) <- NULL
 
+  occluded_minimum_tail <- vapply(
+    diagnostics,
+    function(x) x$min_expected_tail_draws,
+    numeric(1)
+  )
+  occluded_low_tail <- vapply(
+    diagnostics,
+    function(x) {
+      if (!is.null(x$low_tail_resolution_evaluations)) {
+        x$low_tail_resolution_evaluations
+      } else {
+        length(x$low_tail_resolution_rows)
+      }
+    },
+    numeric(1)
+  )
+  minimum_tail <- .min_finite_mst_pmdn(c(
+    original_result$diagnostics$min_expected_tail_draws,
+    occluded_minimum_tail
+  ))
+  low_tail_evaluations <- length(
+    original_result$diagnostics$low_tail_resolution_rows
+  ) + sum(occluded_low_tail)
+
   out <- list(
     data = data,
     population = population,
@@ -632,11 +686,14 @@ image_occlusion_mst_pmdn <- function(model,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,
-      device = device
+      device = device,
+      min_tail_draws = min_tail_draws
     ),
     diagnostics = list(
       original = original_result$diagnostics,
       occluded = diagnostics,
+      min_expected_tail_draws = minimum_tail,
+      low_tail_resolution_evaluations = low_tail_evaluations,
       max_abs_sum_to_total_residual = if (length(active_channels)) {
         .max_abs_finite_mst_pmdn(data$sum_to_total_residual)
       } else {
@@ -646,6 +703,12 @@ image_occlusion_mst_pmdn <- function(model,
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_image_occlusion"
+  .warn_tail_resolution_mst_pmdn(
+    out$diagnostics$min_expected_tail_draws,
+    min_tail_draws,
+    out$diagnostics$low_tail_resolution_evaluations,
+    "Image occlusion"
+  )
   out
 }
 

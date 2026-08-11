@@ -99,7 +99,8 @@ decompose_mst_pmdn <- function(pred_from,
                                seed = NULL,
                                chunk_size = NULL,
                                device = "cpu",
-                               response_names = NULL) {
+                               response_names = NULL,
+                               min_tail_draws = 20L) {
   from_info <- .validate_prediction_mst_pmdn(pred_from, "pred_from")
   to_info <- .validate_prediction_mst_pmdn(pred_to, "pred_to")
   if (!identical(from_info, to_info)) {
@@ -120,6 +121,7 @@ decompose_mst_pmdn <- function(pred_from,
     pred_to = pred_to
   )]
   num_samples <- validate_num_samples(num_samples)
+  min_tail_draws <- validate_num_samples(min_tail_draws)
   latent_draws <- .ensure_latent_bank_mst_pmdn(
     pred_from, functional, latent_draws, num_samples, seed, device
   )
@@ -131,6 +133,7 @@ decompose_mst_pmdn <- function(pred_from,
     NA_real_, nrow = n_states, ncol = from_info$batch_size
   )
   state_results <- vector("list", n_states)
+  state_low_resolution <- integer(n_states)
   for (state in 0:(n_states - 1L)) {
     selected <- .channels_from_mask_mst_pmdn(state, active_channels)
     hybrid <- .hybrid_prediction_mst_pmdn(
@@ -143,10 +146,14 @@ decompose_mst_pmdn <- function(pred_from,
       latent_draws,
       chunk_size,
       device,
-      response_names
+      response_names,
+      min_tail_draws
     )
     state_values[state + 1L, ] <- result$data$value
     state_results[[state + 1L]] <- result$diagnostics
+    state_low_resolution[state + 1L] <- sum(
+      result$data$low_tail_resolution
+    )
   }
 
   contributions <- matrix(
@@ -204,18 +211,26 @@ decompose_mst_pmdn <- function(pred_from,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,
-      device = device
+      device = device,
+      min_tail_draws = min_tail_draws
     ),
     diagnostics = list(
       max_abs_sum_to_total_residual = .max_abs_finite_mst_pmdn(residual),
       min_expected_tail_draws = .min_finite_mst_pmdn(
         state_tail_resolution
       ),
+      low_tail_resolution_evaluations = sum(state_low_resolution),
       state = state_results
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)
   )
   class(out) <- "mst_pmdn_decomposition"
+  .warn_tail_resolution_mst_pmdn(
+    out$diagnostics$min_expected_tail_draws,
+    min_tail_draws,
+    out$diagnostics$low_tail_resolution_evaluations,
+    "Parameter-channel decomposition"
+  )
   out
 }
 
