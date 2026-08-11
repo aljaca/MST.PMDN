@@ -254,3 +254,19 @@ test_that("channel-specific ALE closes to the total effect", {
     tolerance = 1e-7
   )
 })
+
+test_that("ICE accepts explicit one-based case indices", {
+  x <- cbind(feature = seq(-1, 1, length.out = 9), other = 0)
+  result <- ice_mst_pmdn(
+    explanation_test_model(slope = 2),
+    x,
+    feature = 1L,
+    functional = mst_functional("mean", 1L),
+    grid = c(-1, 0, 1),
+    cases = c(9L, 2L, 5L),
+    ale = FALSE
+  )
+  expect_identical(result$cases, c(9L, 2L, 5L))
+  expect_identical(unique(result$curves$case), c(9L, 2L, 5L))
+  expect_identical(result$settings$case_selection, "explicit")
+})

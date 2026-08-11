@@ -424,6 +424,7 @@ ice_mst_pmdn <- function(model,
                          grid = NULL,
                          reference = NULL,
                          n_curves = 100L,
+                         cases = NULL,
                          ale = TRUE,
                          n_bins = 20L,
                          num_samples = 4096L,
@@ -439,10 +440,16 @@ ice_mst_pmdn <- function(model,
   inputs_matrix <- .as_input_matrix_mst_pmdn(inputs)
   feature_info <- .resolve_feature_mst_pmdn(feature, inputs_matrix)
   .validate_image_alignment_mst_pmdn(image_inputs, nrow(inputs_matrix))
-  n_curves <- min(validate_num_samples(n_curves), nrow(inputs_matrix))
-  case_rows <- unique(as.integer(round(seq(
-    1, nrow(inputs_matrix), length.out = n_curves
-  ))))
+  if (is.null(cases)) {
+    n_curves <- min(validate_num_samples(n_curves), nrow(inputs_matrix))
+    case_rows <- unique(as.integer(round(seq(
+      1, nrow(inputs_matrix), length.out = n_curves
+    ))))
+    case_selection <- "systematic"
+  } else {
+    case_rows <- .validate_cases_mst_pmdn(cases, nrow(inputs_matrix))
+    case_selection <- "explicit"
+  }
   feature_values <- inputs_matrix[, feature_info$index]
   if (is.null(grid)) {
     grid <- unique(as.numeric(stats::quantile(
@@ -583,6 +590,7 @@ ice_mst_pmdn <- function(model,
     cases = case_rows,
     settings = list(
       ale = ale_mode,
+      case_selection = case_selection,
       num_samples = if (is.null(latent_draws)) NA_integer_ else
         latent_draws$num_samples,
       chunk_size = chunk_size,

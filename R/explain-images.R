@@ -523,7 +523,20 @@ image_occlusion_mst_pmdn <- function(model,
   patch_table$col_end <- patch_table$col_start + patch_size[2] - 1L
   patch_table$row_center <- (patch_table$row_start + patch_table$row_end) / 2
   patch_table$col_center <- (patch_table$col_start + patch_table$col_end) / 2
+  representative_mask <- .patch_mask_mst_pmdn(
+    image_shape[3], image_shape[4],
+    patch_table$row_start[1L],
+    patch_table$col_start[1L],
+    patch_size,
+    taper
+  )
+  patch_table$mask_sum <- sum(representative_mask)
+  patch_table$mask_mean <- sum(representative_mask) / prod(patch_size)
+  patch_table$mask_max <- max(representative_mask)
   coverage <- matrix(0, nrow = image_shape[3], ncol = image_shape[4])
+  weighted_coverage <- matrix(
+    0, nrow = image_shape[3], ncol = image_shape[4]
+  )
   rows_out <- list()
   active_channels <- character(0)
   diagnostics <- list()
@@ -538,6 +551,7 @@ image_occlusion_mst_pmdn <- function(model,
       taper
     )
     coverage <- coverage + (patch_mask > 0)
+    weighted_coverage <- weighted_coverage + patch_mask
     for (group_name in names(groups)) {
       group <- groups[[group_name]]
       masks <- .mask_like_images_mst_pmdn(
@@ -673,6 +687,7 @@ image_occlusion_mst_pmdn <- function(model,
     population = population,
     patches = patch_table,
     coverage = coverage,
+    weighted_coverage = weighted_coverage,
     functional = functional,
     cases = cases,
     channel_groups = groups,

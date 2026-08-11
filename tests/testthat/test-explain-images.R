@@ -202,3 +202,57 @@ test_that("image decomposition rejects mixtures before patch evaluation", {
     "only available for M = 1"
   )
 })
+
+test_that("grouped occlusion works for array and tensor image inputs", {
+  for (as_tensor in c(FALSE, TRUE)) {
+    x <- matrix(0, nrow = 1, ncol = 1)
+    image <- array(0, c(1, 3, 2, 2))
+    image[, 1L, , ] <- 1
+    image[, 2L, , ] <- 2
+    image[, 3L, , ] <- 3
+    reference <- array(0, c(1, 3, 2, 2))
+    if (as_tensor) {
+      image <- torch::torch_tensor(image)
+      reference <- torch::torch_tensor(reference)
+    }
+    result <- image_occlusion_mst_pmdn(
+      explanation_test_model(slope = 0, image_channel = 2L),
+      x,
+      image,
+      reference,
+      mst_functional("mean", 1L),
+      patch_size = c(2L, 2L),
+      stride = c(1L, 1L),
+      taper = "none",
+      channel_groups = list(psl = 1L, uas = 2L, vas = 3L)
+    )
+    effect <- setNames(result$data$effect, result$data$group)
+    expect_equal(effect[c("psl", "uas", "vas")], c(0, 2, 0),
+                 tolerance = 1e-6)
+  }
+})
+
+test_that("cosine occlusion reports mask weight and weighted coverage", {
+  x <- matrix(0, nrow = 1, ncol = 1)
+  image <- array(1, c(1, 1, 4, 4))
+  reference <- array(0, c(1, 1, 4, 4))
+  result <- image_occlusion_mst_pmdn(
+    explanation_test_model(slope = 0, image_channel = 1L),
+    x,
+    image,
+    reference,
+    mst_functional("mean", 1L),
+    patch_size = c(4L, 4L),
+    stride = c(4L, 4L),
+    taper = "cosine"
+  )
+  window <- outer(
+    sin(pi * (seq_len(4L) - 0.5) / 4L),
+    sin(pi * (seq_len(4L) - 0.5) / 4L)
+  )
+  expect_equal(result$patches$mask_sum, sum(window), tolerance = 1e-12)
+  expect_equal(result$patches$mask_mean, mean(window), tolerance = 1e-12)
+  expect_equal(result$patches$mask_max, max(window), tolerance = 1e-12)
+  expect_equal(result$weighted_coverage, window, tolerance = 1e-12)
+  expect_true(all(result$coverage == 1))
+})

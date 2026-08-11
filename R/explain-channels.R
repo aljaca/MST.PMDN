@@ -25,6 +25,39 @@
   isTRUE(torch_equal(x$to(device = "cpu"), y$to(device = "cpu")))
 }
 
+.effective_skew_none_mst_pmdn <- function(pred, name) {
+  .validate_skew_none(pred, name) ||
+    isTRUE((pred$alpha == 0)$all()$item())
+}
+
+.tensor_change_magnitude_mst_pmdn <- function(from, to) {
+  from_value <- as.numeric(torch::as_array(from$to(device = "cpu")))
+  to_value <- as.numeric(torch::as_array(to$to(device = "cpu")))
+  .max_abs_finite_mst_pmdn(to_value - from_value)
+}
+
+.inverse_nu_mst_pmdn <- function(nu) {
+  torch_where(nu == Inf, torch_zeros_like(nu), 1 / nu)
+}
+
+.channel_change_magnitudes_mst_pmdn <- function(pred_from, pred_to) {
+  c(
+    location = .tensor_change_magnitude_mst_pmdn(
+      pred_from$mu, pred_to$mu
+    ),
+    scale = .tensor_change_magnitude_mst_pmdn(
+      pred_from$scale_chol, pred_to$scale_chol
+    ),
+    skewness = .tensor_change_magnitude_mst_pmdn(
+      pred_from$alpha, pred_to$alpha
+    ),
+    df = .tensor_change_magnitude_mst_pmdn(
+      .inverse_nu_mst_pmdn(pred_from$nu),
+      .inverse_nu_mst_pmdn(pred_to$nu)
+    )
+  )
+}
+
 .channel_is_active_mst_pmdn <- function(channel, pred_from, pred_to) {
   switch(
     channel,
@@ -33,8 +66,12 @@
       pred_from$scale_chol, pred_to$scale_chol
     ),
     skewness = {
-      from_none <- .validate_skew_none(pred_from, "pred_from")
-      to_none <- .validate_skew_none(pred_to, "pred_to")
+      from_none <- .effective_skew_none_mst_pmdn(
+        pred_from, "pred_from"
+      )
+      to_none <- .effective_skew_none_mst_pmdn(
+        pred_to, "pred_to"
+      )
       !(from_none && to_none) &&
         (!identical(from_none, to_none) ||
          !.tensor_equal_mst_pmdn(pred_from$alpha, pred_to$alpha))
@@ -220,6 +257,9 @@ decompose_mst_pmdn <- function(pred_from,
         state_tail_resolution
       ),
       low_tail_resolution_evaluations = sum(state_low_resolution),
+      max_abs_parameter_change = .channel_change_magnitudes_mst_pmdn(
+        pred_from, pred_to
+      ),
       state = state_results
     ),
     latent_draws = .latent_draws_for_output_mst_pmdn(latent_draws)

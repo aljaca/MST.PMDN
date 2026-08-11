@@ -113,3 +113,36 @@ test_that("full parameter-channel decomposition rejects mixtures", {
     "only available for M = 1"
   )
 })
+
+test_that("structural and exact numerical symmetry are equivalent", {
+  pair <- make_channel_pair(skew_none = TRUE)
+  pair$from$skew_none <- FALSE
+  result <- decompose_mst_pmdn(
+    pair$from,
+    pair$to,
+    mst_functional("mean", 1L)
+  )
+  expect_length(result$active_channels, 0L)
+  expect_equal(result$data$total, 0, tolerance = 0)
+})
+
+test_that("decomposition reports exact parameter change magnitudes", {
+  pair <- make_channel_pair(
+    mu_to = 2,
+    scale_to = 3,
+    alpha_from = -0.5,
+    alpha_to = 1,
+    nu_from = 5,
+    nu_to = 10
+  )
+  result <- decompose_mst_pmdn(
+    pair$from,
+    pair$to,
+    mst_functional("mean", 1L)
+  )
+  expect_equal(
+    result$diagnostics$max_abs_parameter_change,
+    c(location = 2, scale = 2, skewness = 1.5, df = 0.1),
+    tolerance = 1e-7
+  )
+})
