@@ -217,6 +217,64 @@ test_that("mixed exact-normal and finite-t loss branches component-wise", {
                tolerance = 2e-6)
 })
 
+test_that("mixed float64 loss and gradients agree with analytic references", {
+  y <- 0.4
+  weights <- c(0.65, 0.35)
+  locations <- c(-0.5, 0.75)
+  scales <- c(0.8, 1.4)
+  alpha <- c(0.3, -0.4)
+  nu <- c(Inf, 1)
+  lambda_alpha <- 0.2
+  lambda_nu_inv <- 0.3
+  pred <- make_mdn_output(
+    pi = matrix(weights, 1),
+    mu = array(locations, c(1, 2, 1)),
+    scale_chol = array(scales, c(1, 2, 1, 1)),
+    nu = matrix(nu, 1),
+    alpha = array(alpha, c(1, 2, 1)),
+    dtype = torch::torch_double()
+  )
+  for (name in c("pi", "mu", "scale_chol", "alpha")) {
+    pred[[name]]$requires_grad_(TRUE)
+  }
+  target <- torch::torch_tensor(matrix(y), dtype = torch::torch_double())
+
+  v <- (y - locations) / scales
+  cauchy_factor <- 1 + v[2]^2
+  skew_multiplier <- c(1, sqrt(2 / cauchy_factor))
+  skew_arg <- alpha * v * skew_multiplier
+  skew_cdf <- c(stats::pnorm(skew_arg[1]), stats::pt(skew_arg[2], df = 2))
+  skew_score <- c(stats::dnorm(skew_arg[1]), stats::dt(skew_arg[2], df = 2)) /
+    skew_cdf
+  density <- c(stats::dnorm(v[1]), stats::dcauchy(v[2])) * 2 * skew_cdf / scales
+  mixture_density <- sum(weights * density)
+  expected <- -log(mixture_density) + lambda_alpha * mean(alpha^2) +
+    lambda_nu_inv * mean(nu^(-2))
+
+  # Differentiate the component log densities with respect to v and alpha.
+  tau <- weights * density / mixture_density
+  score_v <- c(-v[1], -2 * v[2] / cauchy_factor) +
+    skew_score * alpha * skew_multiplier / c(1, cauchy_factor)
+  expected_gradients <- list(
+    pi = -density / mixture_density,
+    mu = tau * score_v / scales,
+    scale_chol = tau * (1 + v * score_v) / scales,
+    alpha = -tau * skew_score * v * skew_multiplier +
+      2 * lambda_alpha * alpha / length(alpha)
+  )
+  loss <- loss_mst_pmdn(pred, target, lambda_alpha, lambda_nu_inv)
+  expect_lt(abs(loss$item() - expected), 1e-13)
+  loss$backward()
+  for (name in names(expected_gradients)) {
+    expect_equal(
+      normal_test_values(pred[[name]]$grad),
+      expected_gradients[[name]],
+      tolerance = 1e-13,
+      info = name
+    )
+  }
+})
+
 test_that("bivariate t normalizer removes float32 gamma cancellation", {
   nu <- torch::torch_tensor(
     c(30, 50, 500),
@@ -236,16 +294,17 @@ test_that("bivariate t normalizer removes float32 gamma cancellation", {
 
 test_that("stable t normalizer agrees with the analytic constant", {
   nu_values <- c(3, 10, 50)
+  nu_float <- torch::torch_tensor(nu_values, dtype = torch::torch_float())
+  nu_double <- torch::torch_tensor(nu_values, dtype = torch::torch_double())
   for (d in 1:5) {
-    actual <- MST.PMDN:::.log_multivariate_t_normalizer(
-      torch::torch_tensor(nu_values, dtype = torch::torch_float()),
-      d
-    )
+    actual_float <- MST.PMDN:::.log_multivariate_t_normalizer(nu_float, d)
+    actual_double <- MST.PMDN:::.log_multivariate_t_normalizer(nu_double, d)
     expected <- lgamma((nu_values + d) / 2) -
                 lgamma(nu_values / 2) -
                 (d / 2) * log(nu_values * pi)
-    expect_equal(normal_test_values(actual), expected, tolerance = 2e-6,
+    expect_equal(normal_test_values(actual_float), expected, tolerance = 2e-6,
                  info = paste("dimension", d))
+    expect_lt(max(abs(normal_test_values(actual_double) - expected)), 5e-14)
   }
 })
 

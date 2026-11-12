@@ -2,6 +2,15 @@ tensor_values <- function(x) {
   as.numeric(torch::as_array(x$to(device = "cpu")))
 }
 
+test_that("Hill transform preserves float64 coefficient precision", {
+  z <- torch::torch_tensor(c(-12, 8, 4), dtype = torch::torch_double())
+  nu <- torch::torch_tensor(c(3, 4, 3), dtype = torch::torch_double())
+  # Brophy's expression evaluated with base R double-precision arithmetic.
+  expected <- c(-3.2297254982172712, 3.2109286665030554, 2.1974274288795104)
+  actual <- tensor_values(MST.PMDN:::.hill_t_transform(z, nu))
+  expect_lt(max(abs(actual - expected)), 1e-13)
+})
+
 test_that("Hill CDF has bounded absolute error", {
   probs <- seq(1e-8, 1 - 1e-8, length.out = 10001)
   for (df in c(3, 4, 5, 6, 10, 30, 100, 502)) {

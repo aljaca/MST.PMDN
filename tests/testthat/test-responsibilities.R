@@ -158,8 +158,7 @@ test_that("responsibilities use the density cap and preserve float32 weights", {
   gaussian <- 0.0001 * stats::dnorm(0)
   expected <- cauchy / (cauchy + gaussian)
   actual <- responsibilities_mst_pmdn(one_capped, target, as_array = TRUE)[1, 1]
-  # The shared Gaussian kernel can round its scalar constant through float32.
-  expect_lt(abs(actual - expected), 5e-10)
+  expect_lt(abs(actual - expected), 1e-16)
 })
 
 test_that("responsibilities validate target alignment and posterior rows", {

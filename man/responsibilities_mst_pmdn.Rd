@@ -26,7 +26,10 @@ For each row, component probabilities are proportional to the predicted
 mixture weights times the component joint densities evaluated at
 \code{target}. The calculation uses the component log densities from
 \code{\link{loss_mst_pmdn}} and normalizes across components in log space.
-It uses the weights in \code{pred$pi} directly. A component with zero
+It uses the weights in \code{pred$pi} directly. The default positive
+\code{min_mix_weight} keeps fitted-model weights positive. With
+\code{min_mix_weight = 0}, softmax weights can underflow to zero.
+Hand-built predictions can also specify zeros. A component with zero
 weight has probability zero and log probability \code{-Inf}. The training
 loss applies a separate floor of \eqn{10^{-12}} to its weights.
 
