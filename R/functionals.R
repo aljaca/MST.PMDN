@@ -291,7 +291,7 @@ print.mst_functional <- function(x, ...) {
     torch_lgamma(nu_mean_safe / 2)
   b <- torch_where(
     normal,
-    sqrt(2 / pi) * torch_ones_like(nu_mean_safe),
+    torch_ones_like(nu_mean_safe) * sqrt(2 / pi),
     torch_exp(log_b)
   )
   shift <- torch_matmul(
@@ -316,7 +316,7 @@ print.mst_functional <- function(x, ...) {
     torch_lgamma(nu_cov_safe / 2)
   b_sq <- torch_where(
     normal,
-    (2 / pi) * torch_ones_like(nu_cov_safe),
+    torch_ones_like(nu_cov_safe) * (2 / pi),
     torch_exp(2 * log_b_cov)
   )$unsqueeze(3L)$unsqueeze(4L)
   multiplier <- torch_where(

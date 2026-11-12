@@ -448,9 +448,12 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 
 #### Function: `responsibilities_mst_pmdn(pred, target, log = FALSE, as_array = FALSE)`
 
-*   The **purpose** is to compute posterior component probabilities for each observed joint response.
-*   The **method** combines predicted mixture weights with component log densities evaluated on the fitted response scale.
-*   The **output** is a tensor with one row per observation and one column per component. Set `log = TRUE` for log probabilities or `as_array = TRUE` for a base R matrix.
+*   **Purpose**\
+    Computes posterior component probabilities for each observed joint response.
+*   **Method**\
+    Combines predicted mixture weights with component log densities evaluated on the fitted response scale. Supply response rows in prediction order.
+*   **Output**\
+    Returns a tensor with one row per observation and one column per component. Set `log = TRUE` for log probabilities or `as_array = TRUE` for a base R matrix.
 
 #### Function: `scov_mst_pmdn(pred, type = c("scale", "scale_chol", "cov"), ...)`
 

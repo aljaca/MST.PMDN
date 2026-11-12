@@ -2111,7 +2111,7 @@ scov_mst_pmdn <- function(pred, type = c("scale", "scale_chol", "cov"),
         torch_lgamma((nu_safe - 1) / 2) - torch_lgamma(nu_safe / 2)
       b_nu_sq <- torch_where(
         normal,
-        (2 / pi) * torch_ones_like(nu_safe),
+        torch_ones_like(nu_safe) * (2 / pi),
         torch_exp(2 * log_b_nu)
       )$unsqueeze(-1)$unsqueeze(-1)
       scale_multiplier <- torch_where(
