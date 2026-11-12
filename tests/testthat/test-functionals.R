@@ -76,6 +76,37 @@ test_that("exact skew-normal and skew-t moments are returned", {
   }
 })
 
+test_that("skew-normal mean and covariance retain float64 precision", {
+  location <- c(0.5, -0.25)
+  C <- matrix(c(1.6, -0.55, 0, 0.9), nrow = 2L)
+  alpha <- c(1.25, -0.8)
+  delta <- alpha / sqrt(1 + sum(alpha^2))
+  scaled_delta <- drop(C %*% delta)
+  expected_mean <- location + sqrt(2 / pi) * scaled_delta
+  expected_cov <- tcrossprod(C) - (2 / pi) * tcrossprod(scaled_delta)
+  pred <- make_mdn_output(
+    pi = matrix(1, 1, 1),
+    mu = array(location, c(1, 1, 2)),
+    scale_chol = array(C, c(1, 1, 2, 2)),
+    nu = matrix(Inf, 1, 1),
+    alpha = array(alpha, c(1, 1, 2)),
+    dtype = torch::torch_double()
+  )
+  actual_mean <- vapply(seq_along(location), function(response) {
+    functional_mst_pmdn(pred, mst_functional("mean", response))$data$value
+  }, numeric(1))
+  actual_cov <- functional_mst_pmdn(
+    pred, mst_functional("covariance", c(1L, 2L))
+  )$data$value
+  expect_equal(actual_mean, expected_mean, tolerance = 1e-13)
+  expect_equal(actual_cov, expected_cov[1, 2], tolerance = 1e-13)
+  expect_equal(
+    scov_mst_pmdn(pred, type = "cov", as_array = TRUE)[1, 1, , ],
+    expected_cov,
+    tolerance = 1e-13
+  )
+})
+
 test_that("mixture covariance contains between-component variation", {
   weights <- c(0.25, 0.75)
   means <- c(-1, 2)

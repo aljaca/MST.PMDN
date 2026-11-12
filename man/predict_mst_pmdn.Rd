@@ -39,3 +39,5 @@ before the model's first matrix multiplication. The diagnostic names the
 parameter used for inference (or reports \code{<unnamed>}) and shows how to
 convert the input explicitly with \code{$to(dtype = ...)}.
 }
+\seealso{\code{\link{responsibilities_mst_pmdn}} for component probabilities
+conditional on observed responses.}

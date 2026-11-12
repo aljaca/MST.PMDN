@@ -129,10 +129,11 @@ init_mu_kmeans <- function(model, outputs_train, n_mixtures, constant_attr,
   # by its series there.
   r <- a * log1p_u
   b <- 48 * a$pow(2)
-  polynomial <- ((0.4 * r + 3.3 * one) * r + 24 * one) * r +
+  # Right-hand scalars preserve the tensor's floating-point precision.
+  polynomial <- ((r * 0.4 + one * 3.3) * r + 24 * one) * r +
                 85.5 * one
   correction <- one + (r + 3 * one) / b -
-                polynomial / (b * (0.8 * r$pow(2) + 100 * one + b))
+                polynomial / (b * (r$pow(2) * 0.8 + 100 * one + b))
   q <- z * torch_sqrt((a / nu) * log1p_ratio)
 
   q * correction
@@ -985,34 +986,23 @@ define_mst_pmdn <- function(
   cterm <- torch_sqrt((nu_safe + d) / (nu_safe + maha))$clamp(max = 1e6)
   cterm <- torch_where(normal, torch_ones_like(cterm), cterm)$unsqueeze(-1)
   alpha_dot_w <- (alpha * (cterm * v))$sum(dim = 3)
-  # R numeric scalars are weak in torch arithmetic: log(2) follows the
-  # tensor dtype and device without allocating a tensor constant per call.
-  log(2) + torch_where(
+  # Keep log(2) on the right to apply it in the tensor's dtype.
+  torch_where(
     normal,
     .log_normal_cdf(alpha_dot_w),
     log_pt(alpha_dot_w, nu_safe + d)
-  )
+  ) + log(2)
 }
 
-loss_mst_pmdn <- function(output, target,
-                          lambda_alpha = 0, lambda_nu_inv = 0) {
-  # Output must have: pi, mu, scale (Cholesky L), nu, alpha
+.component_log_density_mst_pmdn <- function(output, target, skew_none) {
   # target shape: [B, d]
-  lambda_alpha <- .validate_penalty_weight(lambda_alpha, "lambda_alpha")
-  lambda_nu_inv <- .validate_penalty_weight(lambda_nu_inv, "lambda_nu_inv")
-  .require_alpha(output)
-  skew_none <- .validate_skew_none(output)
-  mix_prob   <- output$pi         # [B, M]
   mu         <- output$mu         # [B, M, d]
   scale_chol <- output$scale_chol # [B, M, d, d]
   nu         <- output$nu         # [B, M]
   alpha      <- output$alpha      # [B, M, d]
   normal     <- nu == Inf         # exact Gaussian/skew-normal components
   nu_safe    <- torch_where(normal, 3 * torch_ones_like(nu), nu)
-  # B <- target$size(1)
-  # M <- mix_prob$size(2)
   d <- target$size(2)
-  dev <- mix_prob$device # Get device from a parameter
   # Difference: y - mu
   diff <- target$unsqueeze(2) - mu # [B, M, d]
   diff_unsq <- diff$unsqueeze(-1)  # [B, M, d, 1]
@@ -1037,9 +1027,9 @@ loss_mst_pmdn <- function(output, target,
                                            min = -1 + 1e-7, max = 1e7))
   log_pdf_t <- logC_t + logTail
 
-  # Exact nu -> Inf limit of the symmetric kernel.
-  log_pdf_normal <- -(d / 2) * log(2 * pi) -
-                    0.5 * log_det_Sigma - 0.5 * maha
+  # Exact nu -> Inf limit. Apply the normalizer as a right-hand scalar.
+  log_pdf_normal <- log_det_Sigma * -0.5 - (d / 2) * log(2 * pi) -
+                    maha * 0.5
   log_pdf <- torch_where(normal, log_pdf_normal, log_pdf_t)
 
   if (skew_none) {
@@ -1050,11 +1040,23 @@ loss_mst_pmdn <- function(output, target,
       maha = maha, normal = normal, d = d
     )
   }
+  list(log_density = log_component, normal = normal, nu_safe = nu_safe)
+}
+
+loss_mst_pmdn <- function(output, target,
+                          lambda_alpha = 0, lambda_nu_inv = 0) {
+  lambda_alpha <- .validate_penalty_weight(lambda_alpha, "lambda_alpha")
+  lambda_nu_inv <- .validate_penalty_weight(lambda_nu_inv, "lambda_nu_inv")
+  .require_alpha(output)
+  skew_none <- .validate_skew_none(output)
+  mix_prob <- output$pi
+  dev <- mix_prob$device
+  components <- .component_log_density_mst_pmdn(output, target, skew_none)
   # Mixture weighting and log-sum-exp for total log-likelihood
   # log P(y|x) = log sum_k [ pi_k * SkewT(y | mu_k, Sigma_k, alpha_k, nu_k) ]
   #            = logsumexp_k [ log(pi_k) + log(SkewT(...)) ]
   weighted_log_probs <- torch_log(mix_prob$clamp(min = 1e-12)) +
-                        log_component # [B, M]
+                        components$log_density # [B, M]
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
   # Construct penalty graphs only when their weights are active. Under the
@@ -1065,11 +1067,12 @@ loss_mst_pmdn <- function(output, target,
       dtype = loss$dtype,
       device = dev
     )
-    loss <- loss + lambda_alpha_tensor * alpha$pow(2)$mean()
+    loss <- loss + lambda_alpha_tensor * output$alpha$pow(2)$mean()
   }
   if (lambda_nu_inv > 0) {
+    nu_safe <- components$nu_safe
     nu_inv_sq <- torch_where(
-      normal,
+      components$normal,
       torch_zeros_like(nu_safe),
       nu_safe$pow(-2)
     )
@@ -2108,7 +2111,7 @@ scov_mst_pmdn <- function(pred, type = c("scale", "scale_chol", "cov"),
         torch_lgamma((nu_safe - 1) / 2) - torch_lgamma(nu_safe / 2)
       b_nu_sq <- torch_where(
         normal,
-        (2 / pi) * torch_ones_like(nu_safe),
+        torch_ones_like(nu_safe) * (2 / pi),
         torch_exp(2 * log_b_nu)
       )$unsqueeze(-1)$unsqueeze(-1)
       scale_multiplier <- torch_where(
