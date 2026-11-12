@@ -23,3 +23,5 @@ The function extracts mixture weights, component locations, Cholesky scale facto
 \value{
 A single-element \code{\link[torch]{torch_tensor}} containing the batch-averaged negative log-likelihood.
 }
+\seealso{\code{\link{responsibilities_mst_pmdn}} for the posterior probabilities
+computed from the component log densities.}

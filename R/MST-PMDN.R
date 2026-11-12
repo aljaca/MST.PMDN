@@ -994,25 +994,15 @@ define_mst_pmdn <- function(
   )
 }
 
-loss_mst_pmdn <- function(output, target,
-                          lambda_alpha = 0, lambda_nu_inv = 0) {
-  # Output must have: pi, mu, scale (Cholesky L), nu, alpha
+.component_log_density_mst_pmdn <- function(output, target, skew_none) {
   # target shape: [B, d]
-  lambda_alpha <- .validate_penalty_weight(lambda_alpha, "lambda_alpha")
-  lambda_nu_inv <- .validate_penalty_weight(lambda_nu_inv, "lambda_nu_inv")
-  .require_alpha(output)
-  skew_none <- .validate_skew_none(output)
-  mix_prob   <- output$pi         # [B, M]
   mu         <- output$mu         # [B, M, d]
   scale_chol <- output$scale_chol # [B, M, d, d]
   nu         <- output$nu         # [B, M]
   alpha      <- output$alpha      # [B, M, d]
   normal     <- nu == Inf         # exact Gaussian/skew-normal components
   nu_safe    <- torch_where(normal, 3 * torch_ones_like(nu), nu)
-  # B <- target$size(1)
-  # M <- mix_prob$size(2)
   d <- target$size(2)
-  dev <- mix_prob$device # Get device from a parameter
   # Difference: y - mu
   diff <- target$unsqueeze(2) - mu # [B, M, d]
   diff_unsq <- diff$unsqueeze(-1)  # [B, M, d, 1]
@@ -1050,11 +1040,23 @@ loss_mst_pmdn <- function(output, target,
       maha = maha, normal = normal, d = d
     )
   }
+  list(log_density = log_component, normal = normal, nu_safe = nu_safe)
+}
+
+loss_mst_pmdn <- function(output, target,
+                          lambda_alpha = 0, lambda_nu_inv = 0) {
+  lambda_alpha <- .validate_penalty_weight(lambda_alpha, "lambda_alpha")
+  lambda_nu_inv <- .validate_penalty_weight(lambda_nu_inv, "lambda_nu_inv")
+  .require_alpha(output)
+  skew_none <- .validate_skew_none(output)
+  mix_prob <- output$pi
+  dev <- mix_prob$device
+  components <- .component_log_density_mst_pmdn(output, target, skew_none)
   # Mixture weighting and log-sum-exp for total log-likelihood
   # log P(y|x) = log sum_k [ pi_k * SkewT(y | mu_k, Sigma_k, alpha_k, nu_k) ]
   #            = logsumexp_k [ log(pi_k) + log(SkewT(...)) ]
   weighted_log_probs <- torch_log(mix_prob$clamp(min = 1e-12)) +
-                        log_component # [B, M]
+                        components$log_density # [B, M]
   # Negative log-likelihood (average over batch)
   loss <- -torch_logsumexp(weighted_log_probs, dim = 2)$mean()
   # Construct penalty graphs only when their weights are active. Under the
@@ -1065,11 +1067,12 @@ loss_mst_pmdn <- function(output, target,
       dtype = loss$dtype,
       device = dev
     )
-    loss <- loss + lambda_alpha_tensor * alpha$pow(2)$mean()
+    loss <- loss + lambda_alpha_tensor * output$alpha$pow(2)$mean()
   }
   if (lambda_nu_inv > 0) {
+    nu_safe <- components$nu_safe
     nu_inv_sq <- torch_where(
-      normal,
+      components$normal,
       torch_zeros_like(nu_safe),
       nu_safe$pow(-2)
     )

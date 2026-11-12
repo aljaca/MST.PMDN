@@ -446,6 +446,14 @@ The deep MST-PMDN implementation consists of the following key functions and mod
 *   **Method:** Runs a forward pass on new inputs in evaluation mode (`torch_no_grad()`).
 *   **Output:** Raw model output list containing mixture parameters for the new inputs.
 
+#### Function `responsibilities_mst_pmdn(pred, target, log = FALSE, as_array = FALSE)`
+
+Computes the posterior probabilities of the fitted components after observing
+each row of the joint response. Supply the prediction list and the aligned
+responses on the fitted scale. The result has one row per observation and one
+column per component. Set `log = TRUE` for log probabilities or
+`as_array = TRUE` for a base R matrix.
+
 #### Function: `scov_mst_pmdn(pred, type = c("scale", "scale_chol", "cov"), ...)`
 
 *   **Purpose:** Returns component scale matrices, their Cholesky factors, or actual skew-t/skew-normal covariance matrices.

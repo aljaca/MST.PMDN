@@ -74,6 +74,8 @@ Key user-facing functions include:
   \item \code{\link{define_mst_pmdn}}: construct a new MST-PMDN model object.
   \item \code{\link{train_mst_pmdn}}: fit an MST-PMDN model to training data.
   \item \code{\link{predict_mst_pmdn}}: generate predictive distributions or point predictions.
+  \item \code{\link{responsibilities_mst_pmdn}} computes component probabilities
+  conditional on predictors and observed responses.
   \item \code{\link{loss_mst_pmdn}}: compute the negative log-likelihood loss for evaluation.
   \item \code{\link{sample_mst_pmdn}}: draw samples as \code{\link[torch]{torch_tensor}} objects.
   \item \code{\link{sample_mst_pmdn_df}}: draw samples returned as an R \code{\link{data.frame}}.
